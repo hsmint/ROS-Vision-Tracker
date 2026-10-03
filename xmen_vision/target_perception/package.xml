@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>target_perception</name>
+  <version>0.1.0</version>
+  <description>인지: RealSense 영상 수신·확인, (이후) HSV·컨투어 검출 → /target</description>
+  <maintainer email="team@example.com">team</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tracking_common</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>message_filters</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>realsense2_camera_msgs</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

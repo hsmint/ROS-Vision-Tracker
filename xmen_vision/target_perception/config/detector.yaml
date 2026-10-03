@@ -1,0 +1,54 @@
+# 문제 1 설정 파일 — 코드 수정 없이 이 파일만 바꿔서 튜닝한다.
+# 세 장면(보임·없음·가림)은 반드시 같은 설정 파일로 확인한다.
+
+target:
+  name: blue_cube            # 사진·결과 JSON에 기록되는 목표 이름
+  # OpenCV HSV 범위: H 0~179, S 0~255, V 0~255
+  # 빨강처럼 H가 0/179 경계를 넘는 색은 범위를 두 개 적는다(합집합).
+  hsv_ranges:
+    - lower: [103, 208, 26]
+      upper: [116, 255, 255]
+
+camera:
+  backend: realsense         # realsense(pyrealsense2) | v4l2(OpenCV VideoCapture, 예비용)
+  device: 6                  # v4l2 장치 번호(backend: v4l2일 때만). 이 PC에서는 /dev/video6 = D435 컬러
+  fps: 30
+  warmup_frames: 30          # 자동 노출·화이트밸런스 안정화용으로 버리는 프레임 수
+  # HSV 값은 노출·화이트밸런스가 바뀌면 같이 변한다. 튜닝 후에는 고정을 권장한다.
+  # null = 자동. tune 모드에서 현재 자동값이 출력되니 그 값을 적으면 된다.
+  exposure: null             # RealSense 컬러 노출(1~10000, 단위 0.1ms 상당)
+  white_balance: null        # RealSense 화이트밸런스(2800~6500 K)
+
+processing:
+  # 처리 해상도. 입력이 다르면 이 크기로 리사이즈한 뒤 처리한다.
+  # 면적 기준(min_area)은 이 해상도 기준 픽셀 수다.
+  # D435는 630×360 같은 임의 크기를 지원하지 않는다. 640×360은 컬러·뎁스 모두 지원.
+  width: 640
+  height: 360
+  blur_ksize: 5              # 가우시안 블러 커널(홀수, 0이면 생략)
+  morph_kernel: 5            # 모폴로지 커널 크기
+  open_iterations: 1         # 열림: 작은 점 잡음 제거
+  close_iterations: 2        # 닫힘: 물체 내부 구멍·틈 메우기
+
+selection:
+  min_area: 800              # 이 면적(px) 미만의 컨투어는 잡음으로 버린다(뎁스 없을 때).
+                             # 뎁스가 있으면: 뎁스 측정 실패(너무 가까움 등)여도 이만큼 크면 색만으로 통과
+  max_area_ratio: 0.6        # 화면 면적 대비 이 비율 초과는 배경 오검출로 버린다
+  min_solidity: 0.5          # 면적/볼록껍질 면적. 가림을 허용하려고 낮게 둔다
+  # 후보 여러 개 중 선택 규칙:
+  #   1) 위 필터를 통과한 후보 중 면적이 가장 큰 것
+  #   2) 면적 차이가 tie_ratio 이내이면 영상 중심에 더 가까운 것
+  tie_ratio: 0.1
+
+depth:
+  # 컨투어 안 뎁스 중앙값 Z로 후보를 검증한다(RealSense만). 과제 기준: 가까운 거리 ~ 1 m.
+  enabled: true
+  min_m: 0.1                 # D435 최소 측정거리(약 0.2 m)보다 가까우면 뎁스가 0 → min_area 규칙으로 판단
+  max_m: 1.2                 # 1 m + 여유. 이보다 먼 같은 색 물체는 depth_range로 탈락
+  min_valid_ratio: 0.3       # 컨투어 안 유효(0 아님) 뎁스 픽셀 비율 하한
+  erode: 1                   # 경계 픽셀 제외용 침식 횟수(3×3)
+  min_area_px: 60            # 뎁스가 있을 때 픽셀 최소 면적(잡음 바닥). 1 m에서 3×3 cm 면 ≈ 190 px
+  # 목표 3×3×6 cm 직육면체: 보이는 모양은 짧은 변 ≈3 cm, 긴 변 3~7.3 cm, 면적 9~27 cm²
+  max_short_m: 0.05
+  max_long_m: 0.10
+  area_m2: [0.0003, 0.0035]  # 하한은 가림 허용으로 느슨하게(3 cm²), 상한 27 cm² × 1.3
