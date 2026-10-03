@@ -111,14 +111,4 @@ vcgencmd measure_temp; vcgencmd get_throttled           # RPi 온도·클럭 저
 | 검증 | test_inputs 11/11, search_test 5/5, sign_demo 통과 | — |
 
 RPi detector가 코어 1개를 거의 다 쓴다(Python은 사실상 1코어). 100%에 닿으면 `/target` Hz가 떨어지고
-controller가 오래된 입력을 버려 `TIMEOUT`(정지)으로 간다 → 방식 A 또는 15 fps로 여유 확보 예정.
-
-## 남은 일
-
-- [ ] 조명 켠 환경 HSV 재튜닝 (현재 값은 어두운 곳 기준)
-- [ ] RPi pyrealsense2 소스 빌드 → 방식 A로 CPU 절감
-- [ ] RPi 장시간 실행 시 온도·Hz
-- [ ] `motor_driver` OpenCR 시리얼 송신 (속도 → 목표 각도 변환, 각도 제한, 시작 각도)
-- [ ] OpenCR 워치독 (제어 담당, 발제 필수)
-- [ ] 틸트 부호 실제 모터로 확인, `/joint_states`
-- [ ] 카메라 자동 재연결, bag 녹화·재처리
+controller가 오래된 입력을 버려 `TIMEOUT`(정지)으로 간다
