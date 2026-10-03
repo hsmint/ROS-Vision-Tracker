@@ -1,6 +1,7 @@
 // Camera controller: pan ID11 home4067, tilt ID12 home2116; homing offsets=0.
 // Home-relative angles; motor's internal position controller holds after arrival.
 // h: tilt then pan home. pan DEG / tilt DEG. speed DEG_S. x: hold. off: release.
+// move X_DEG Y_DEG X_SPEED Y_SPEED: simultaneous home-relative movement.
 // auto on/off: persist boot homing preference. Default off for first motion test.
 #include <Dynamixel2Arduino.h>
 #include <EEPROM.h>
@@ -16,6 +17,9 @@ const float angle_limits[] = {135, 90};
 int32_t targets[2], anchors[2];
 bool configured[2] = {false, false};
 bool active = false, home_sequence = false, faulted = false;
+bool dual_move = false;
+uint8_t dual_settled[2] = {0, 0};
+float dual_speeds[2] = {5, 5};
 bool auto_home = false;
 float speed_deg_s = 5;
 uint8_t stage = 0, settled = 0;
@@ -38,7 +42,7 @@ int32_t nearestError(int32_t position, int32_t home) {
 }
 // 메모: 진행 중 이동·홈 복귀를 취소하고, 제어 중인 축의 현재 위치를 새 목표로 잡아 토크를 유지한다. 위치 유지 명령이 실패하면 토크 해제를 요청한다.
 void hold() {
-  active = false; home_sequence = false;
+  active = false; home_sequence = false; dual_move = false;
   for (uint8_t i = 0; i < 2; ++i) {
     if (!configured[i]) continue;
     int32_t p, torque;
@@ -136,6 +140,78 @@ bool readyForMove() {
   if (active) { Serial.println("BUSY: send x to stop first."); return false; }
   return true;
 }
+// 입력 순서는 X각도 Y각도 X속도 Y속도. 내부 배열은 Y(ID12), X(ID11).
+// 전체 입력을 검사한 다음에만 호출하므로 잘못된 입력으로 한 축만 이동하지 않는다.
+bool parseMove(const char *text, float values[4]) {
+  float parsed[4];
+  for (uint8_t i = 0; i < 4; ++i) {
+    while (isspace(static_cast<unsigned char>(*text))) ++text;
+    char *end;
+    parsed[i] = strtof(text, &end);
+    if (end == text || !isfinite(parsed[i]) ||
+        (*end && !isspace(static_cast<unsigned char>(*end)))) return false;
+    text = end;
+  }
+  while (isspace(static_cast<unsigned char>(*text))) ++text;
+  if (*text || fabsf(parsed[0]) > angle_limits[1] || fabsf(parsed[1]) > angle_limits[0] ||
+      parsed[2] < 1.374f || parsed[2] > 30 || parsed[3] < 1.374f || parsed[3] > 30) return false;
+  memcpy(values, parsed, sizeof(parsed));
+  return true;
+}
+
+// Profile Acceleration(108), Profile Velocity(112), Goal Position(116)를
+// 두 모터에 하나의 Sync Write 패킷으로 보내 함께 출발시킨다.
+void moveBoth(const float values[4]) {
+  if (!readyForMove()) return;
+  const float angles[2] = {values[1], values[0]};
+  const float speeds[2] = {values[3], values[2]};
+  int32_t profiles[2], goals[2];
+  for (uint8_t i = 0; i < 2; ++i) {
+    int32_t cap;
+    if (!require(readValue(ids[i], VELOCITY_LIMIT, cap) && cap > 0 && cap <= 1023,
+                 "velocity limit")) return;
+    profiles[i] = static_cast<int32_t>(floorf(speeds[i] / 1.374f));
+    if (profiles[i] < 1 || profiles[i] > cap) {
+      Serial.println("REJECTED: speed outside motor limit."); return;
+    }
+  }
+  if (!prepareAxis(0) || !prepareAxis(1)) return;
+  for (uint8_t i = 0; i < 2; ++i) {
+    const int64_t goal = static_cast<int64_t>(anchors[i]) + lroundf(angles[i] * 4096.0f / 360.0f);
+    if (!require(goal >= -1048575 && goal <= 1048575, "extended position range")) return;
+    goals[i] = static_cast<int32_t>(goal);
+  }
+  // prepareAxis()가 현재 위치를 목표로 설정했으므로 토크를 켜도 새 이동은 아직 시작하지 않는다.
+  for (uint8_t i = 0; i < 2; ++i) {
+    if (!require(dxl.torqueOn(ids[i]), "torque on") ||
+        !require(dxl.writeControlTableItem(BUS_WATCHDOG, ids[i], 25), "watchdog")) return;
+  }
+  struct Payload { int32_t acceleration, velocity, position; };
+  static_assert(sizeof(Payload) == 12, "Sync Write payload must be 12 bytes");
+  Payload data[2] = {{1, profiles[0], goals[0]}, {1, profiles[1], goals[1]}};
+  DYNAMIXEL::XELInfoSyncWrite_t axes[2] = {};
+  DYNAMIXEL::InfoSyncWriteInst_t packet = {};
+  packet.addr = 108; packet.addr_length = sizeof(Payload);
+  packet.p_xels = axes; packet.xel_count = 2; packet.is_info_changed = true;
+  for (uint8_t i = 0; i < 2; ++i) {
+    axes[i].id = ids[i]; axes[i].p_data = reinterpret_cast<uint8_t *>(&data[i]);
+  }
+  if (!require(dxl.syncWrite(&packet), "dual target write")) return;
+  // Sync Write에는 개별 응답이 없으므로 각 모터의 적용된 목표를 확인한다.
+  for (uint8_t i = 0; i < 2; ++i) {
+    int32_t actual;
+    if (!require(readValue(ids[i], GOAL_POSITION, actual) && actual == goals[i],
+                 "dual target verification")) return;
+    targets[i] = goals[i]; dual_speeds[i] = profiles[i] * 1.374f;
+    dual_settled[i] = 0;
+  }
+  stage_ms = millis(); home_sequence = false; dual_move = true; active = true;
+  Serial.print("MOVING XY: X="); Serial.print(values[0], 2);
+  Serial.print(" Y="); Serial.print(values[1], 2);
+  Serial.print(" deg; actual profile X="); Serial.print(dual_speeds[1], 3);
+  Serial.print(" Y="); Serial.print(dual_speeds[0], 3); Serial.println(" deg/s.");
+}
+
 // 메모: 두 축을 준비하고 상하 축부터 홈 이동을 시작한다. 상하 도착 후 좌우 이동은 loop()에서 이어서 실행한다.
 void startHome() {
   if (!readyForMove()) return;
@@ -144,7 +220,7 @@ void startHome() {
 }
 // 메모: 두 축의 이동을 취소하고 토크를 끈 뒤 watchdog 해제를 요청한다. 무게로 카메라가 내려갈 수 있으므로 먼저 지지해야 한다.
 void release() {
-  active = false; home_sequence = false;
+  active = false; home_sequence = false; dual_move = false;
   bool ok = true;
   for (uint8_t i = 0; i < 2; ++i) {
     bool axis_ok = dxl.torqueOff(ids[i]);
@@ -182,6 +258,13 @@ void command(char *line) {
     } else Serial.println(auto_home ? "AUTO on saved: home on next board startup." : "AUTO off saved: wait for commands.");
     return;
   }
+  if (!strncmp(line, "move", 4) && (line[4] == '\0' || isspace(static_cast<unsigned char>(line[4])))) {
+    float values[4];
+    if (!parseMove(line + 4, values)) {
+      Serial.println("Use move X_DEG Y_DEG X_SPEED Y_SPEED. X +/-90, Y +/-135; speeds 1.374..30 deg/s."); return;
+    }
+    moveBoth(values); return;
+  }
   float value;
   if (!strncmp(line, "speed ", 6) && parseNumber(line + 6, value)) {
     if (value < 1.374f || value > 30) { Serial.println("REJECTED: speed 1.374..30 deg/s."); return; }
@@ -196,7 +279,7 @@ void command(char *line) {
     if (!readyForMove() || !prepareAxis(i)) return;
     home_sequence = false; moveAxis(i, value); return;
   }
-  Serial.println("Use pan DEG | tilt DEG | speed DEG_S | h | x | off | p | auto on/off.");
+  Serial.println("Use move X_DEG Y_DEG X_SPEED Y_SPEED | pan DEG | tilt DEG | speed DEG_S | h | x | off | p | auto on/off.");
 }
 // 메모: 보드 시작 시 시리얼·모터 통신을 준비하고 EEPROM의 자동 복귀 설정을 읽는다. auto가 켜져 있으면 홈 복귀를 시작하고, 꺼져 있으면 입력을 기다린다.
 void setup() {
@@ -230,6 +313,22 @@ void loop() {
                  "communication or hardware error")) return;
   }
   if (!active) return;
+  if (dual_move) {
+    for (uint8_t i = 0; i < 2; ++i) {
+      const uint32_t timeout = 15000 + static_cast<uint32_t>(ceilf(1000 * 2 * angle_limits[i] / dual_speeds[i]));
+      int32_t p, v;
+      if (!require(readValue(ids[i], PRESENT_POSITION, p) &&
+                   readValue(ids[i], PRESENT_VELOCITY, v), "dual feedback")) return;
+      const bool reached = llabs(static_cast<int64_t>(p) - targets[i]) <= 8 && abs(v) <= 1;
+      dual_settled[i] = reached ? (dual_settled[i] < 5 ? dual_settled[i] + 1 : 5) : 0;
+      if (dual_settled[i] < 5 && !require(millis() - stage_ms < timeout, "dual movement timeout")) return;
+    }
+    if (dual_settled[0] >= 5 && dual_settled[1] >= 5) {
+      active = false; dual_move = false;
+      Serial.println("DONE XY: both axes reached; holding position.");
+    }
+    return;
+  }
   const uint32_t timeout_ms = 15000 + static_cast<uint32_t>(ceilf(1000 * 270 / (floorf(speed_deg_s / 1.374f) * 1.374f)));
   if (!require(millis() - stage_ms < timeout_ms, "movement timeout")) return;
   int32_t p, v;
