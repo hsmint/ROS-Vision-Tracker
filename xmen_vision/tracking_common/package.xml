@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>tracking_common</name>
+  <version>0.1.0</version>
+  <description>토픽·타입·QoS·상태 값 단일 정의(인지·제어·시험·보고서 공용) (담당: 통합)</description>
+  <maintainer email="team@example.com">team</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
