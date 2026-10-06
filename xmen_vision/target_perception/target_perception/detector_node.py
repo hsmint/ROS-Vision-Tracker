@@ -57,6 +57,7 @@ class TargetDetector(Node):
         self.last_frame_no = None      # realsense: 마지막 프레임 번호
         self.last_rx = None            # 마지막으로 새 영상을 받은 시각(노드 시계)
         self.count = {'published': 0, 'detected': 0, 'duplicate': 0}
+        self.focal_set = False         # ros: 카메라 정보로 초점거리를 반영했는지
         self.running = True
 
         if self.source == 'realsense':
@@ -104,13 +105,37 @@ class TargetDetector(Node):
         if self.use_depth:
             self.align = rs.align(rs.stream.color)       # 뎁스를 컬러 픽셀 좌표로
             self.depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
-        sensor = profile.get_device().first_color_sensor()
+        self.apply_camera_options(profile.get_device().first_color_sensor(), c)
+        self.update_focal(self.fx, i.width)
+        self.get_logger().info(f'카메라 {W}×{H}@{c.get("fps", 30)} fx={self.fx:.1f} fy={self.fy:.1f}')
+
+    def apply_camera_options(self, sensor, c):
+        """exposure·white_balance에 숫자가 있으면 해당 자동 기능을 끄고 고정한다.
+        camera.options = 그 밖의 컬러 센서 옵션 {이름: 값}(예: auto_exposure_priority). 지원하지 않으면 경고 후 무시."""
+        rs = self.rs
         for auto, key, opt in [(rs.option.enable_auto_exposure, 'exposure', rs.option.exposure),
                                (rs.option.enable_auto_white_balance, 'white_balance', rs.option.white_balance)]:
-            if c.get(key) is not None:                   # config에 값이 있으면 자동 끄고 고정
+            if c.get(key) is not None:
                 sensor.set_option(auto, 0)
                 sensor.set_option(opt, float(c[key]))
-        self.get_logger().info(f'카메라 {W}×{H}@{c.get("fps", 30)} fx={self.fx:.1f} fy={self.fy:.1f}')
+        for name, value in (c.get('options') or {}).items():
+            opt = getattr(rs.option, name, None)
+            if opt is None or not sensor.supports(opt):
+                self.get_logger().warning(f'컬러 센서가 {name} 옵션을 지원하지 않는다 — 무시')
+                continue
+            r = sensor.get_option_range(opt)
+            v = min(max(float(value), r.min), r.max)
+            sensor.set_option(opt, v)
+            self.get_logger().info(f'camera option {name} = {v}')
+
+    def update_focal(self, fx, width):
+        """실제 컬러 초점거리로 크기 기반 면적 기준(selection.min_area: auto 등)을 다시 계산한다.
+        config의 fx_px는 근사값(640×360 ≈ 460)이다."""
+        c = self.cfg['camera']
+        c['fx_px'], c['fx_width'] = float(fx), int(width)
+        detector.resolve_size_limits(self.cfg)
+        s = self.cfg['selection']
+        self.get_logger().info(f'fx={fx:.1f}px@{width} → min_area={s["min_area"]} max_area_ratio={s["max_area_ratio"]}')
 
     def realsense_loop(self):
         """전용 스레드: 새 프레임이 올 때까지 기다린다(폴링 없음)."""
@@ -170,9 +195,12 @@ class TargetDetector(Node):
             return
         self.last_stamp_ns, self.last_rx = stamp.nanoseconds, self.get_clock().now()
         bgr = self.bridge.imgmsg_to_cv2(msg.rgb, 'bgr8')
+        k = msg.rgb_camera_info.k
+        if not self.focal_set and k[0] > 0:            # 첫 영상에서 실제 초점거리로 면적 기준 재계산
+            self.update_focal(k[0], msg.rgb_camera_info.width or bgr.shape[1])
+            self.focal_set = True
         depth = None
         if self.use_depth:
-            k = msg.rgb_camera_info.k
             depth = detector.DepthFrame(self.bridge.imgmsg_to_cv2(msg.depth, 'passthrough'), 0.001, k[0], k[4])
         self.process(bgr, stamp, 'topic(header.stamp)', depth)
 
