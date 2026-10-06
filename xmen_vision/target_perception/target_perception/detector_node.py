@@ -99,7 +99,7 @@ class TargetDetector(Node):
         try:
             profile = self.pipe.start(conf)
         except RuntimeError as e:
-            raise RuntimeError(f'RealSense 시작 실패: {e} — USB3·다른 프로그램(realsense2_camera·run.py) 점유 확인') from e
+            raise RuntimeError(f'RealSense 시작 실패: {e} — USB3·다른 프로그램(realsense2_camera·tuning) 점유 확인') from e
         i = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         self.fx, self.fy = i.fx, i.fy
         if self.use_depth:

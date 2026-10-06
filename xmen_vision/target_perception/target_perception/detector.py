@@ -12,7 +12,20 @@ import cv2
 import numpy as np
 import yaml
 
-DEFAULT_CONFIG = Path(__file__).resolve().parent / 'config.yaml'
+def package_path(*parts):
+    """target_perception 패키지 파일 경로. 설치(share)에 있으면 그것을, 없으면 소스 위치를 쓴다.
+    --symlink-install이면 share의 파일은 소스(저장소) 파일을 가리킨다."""
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        p = Path(get_package_share_directory('target_perception')).joinpath(*parts)
+        if p.exists():
+            return p
+    except Exception:
+        pass
+    return Path(__file__).resolve().parent.parent.joinpath(*parts)
+
+
+DEFAULT_CONFIG = package_path('config', 'detector.yaml')
 
 
 def load_config(path=DEFAULT_CONFIG):

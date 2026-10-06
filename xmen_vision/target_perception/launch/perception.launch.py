@@ -8,7 +8,7 @@
 source
   realsense (기본)  detector가 카메라를 직접 연다. 영상 토픽 없음
   ros               camera.launch.py(realsense2_camera, viewer 없음)를 함께 띄우고 detector가 /camera/camera/rgbd를 구독
-카메라는 한 프로세스만 연다 — 방식 A 실행 중에는 camera.launch.py·problem1/run.py를 따로 띄우지 않는다.
+카메라는 한 프로세스만 연다 — 방식 A 실행 중에는 camera.launch.py·tuning을 따로 띄우지 않는다.
 """
 from pathlib import Path
 from launch import LaunchDescription

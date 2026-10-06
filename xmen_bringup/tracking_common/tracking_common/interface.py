@@ -9,8 +9,10 @@ def results_dir():
     """시험 결과 저장 폴더. TRACKING_RESULTS_DIR 환경변수 > <ws>/results(--symlink-install 소스 위치) > ./results"""
     if os.environ.get('TRACKING_RESULTS_DIR'):
         return Path(os.environ['TRACKING_RESULTS_DIR'])
-    # --symlink-install이면 소스 위치(<ws>/src/.../interface.py). 위로 올라가며 src/와 install/이 있는 ws를 찾는다
-    for d in Path(__file__).resolve().parents:
+    # --symlink-install이면 <ws>/build/... 또는 소스 위치. 위로 올라가며 src/와 install/이 있는 ws를 찾는다.
+    # ws/src/Xmen이 다른 곳을 가리키는 링크면 resolve()가 ws 밖으로 나가므로 링크 그대로의 경로를 먼저 본다
+    here = Path(__file__)
+    for d in [*here.absolute().parents, *here.resolve().parents]:
         if (d / 'src').is_dir() and (d / 'install').is_dir():
             return d / 'results'
     return Path.cwd() / 'results'

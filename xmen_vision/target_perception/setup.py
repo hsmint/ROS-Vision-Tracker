@@ -11,6 +11,7 @@ setup(
         ('share/' + package, ['package.xml']),
         ('share/' + package + '/launch', glob('launch/*.py')),
         ('share/' + package + '/config', glob('config/*.yaml')),
+        ('share/' + package + '/data', glob('data/*.png')),        # evaluate --sim 기준 영상
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -20,5 +21,7 @@ setup(
     entry_points={'console_scripts': [
         'camera_viewer = target_perception.camera_viewer_node:main',
         'detector = target_perception.detector_node:main',
+        'tuning = target_perception.tuning:main',        # HSV 튜닝·장면 기록·검출률 측정·데이터 수집
+        'evaluate = target_perception.evaluate:main',    # 조명×거리 인식률 평가·설정 비교
     ]},
 )
