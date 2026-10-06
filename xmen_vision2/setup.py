@@ -1,7 +1,7 @@
 from glob import glob
 from setuptools import setup
 
-package = 'target_perception'
+package = 'xmen_vision'
 setup(
     name=package,
     version='0.1.0',
@@ -18,6 +18,7 @@ setup(
     description='인지: RealSense 영상 수신·확인, HSV·컨투어·뎁스 검출 → /target',
     license='Apache-2.0',
     entry_points={'console_scripts': [
-        'detector = target_perception.detector_node:main',
+        'camera_viewer = xmen_vision.camera_viewer_node:main',
+        'detector = xmen_vision.detector_node:main',
     ]},
 )

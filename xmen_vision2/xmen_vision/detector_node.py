@@ -29,13 +29,15 @@ from rclpy.node import Node
 from rclpy.time import Time
 from std_msgs.msg import String
 
-from target_perception import detector
+from xmen_vision.xmen_vision import detector
 from tracking_common import interface as I
 
 
 class TargetDetector(Node):
     def __init__(self):
         super().__init__('target_detector')
+
+        self.declare_parameters()
         p = self.declare_parameter
         default_cfg = Path(get_package_share_directory('target_perception')) / 'config' / 'detector.yaml'
         cfg_path = p('config', str(default_cfg)).value
