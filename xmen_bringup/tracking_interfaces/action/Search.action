@@ -1,0 +1,15 @@
+# /search — 목표를 잃었을 때 제자리 회전 탐색
+# 요청
+float64 direction      # +1 = 왼쪽(반시계, REP-103 angular.z +), -1 = 오른쪽
+float64 speed          # 회전 속도 크기 [rad/s], > 0
+float64 timeout        # 탐색 제한 시간 [s], > 0
+---
+# 결과
+bool found
+string reason          # FOUND | TIMEOUT | CANCELED | NO_INPUT | INVALID_GOAL
+float64 elapsed        # [s]
+---
+# 진행
+float64 elapsed        # [s]
+float64 angular_z      # 현재 회전 명령 [rad/s]
+string state           # SEARCHING
