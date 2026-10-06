@@ -46,6 +46,17 @@ ros2 run target_perception evaluate --sim --ablation  # 실제 영상 1장 변�
 | 밝을 때 큐브가 조각남 | 하이라이트가 mask에서 빠짐 | `hsv_ranges` S 하한, `relaxed_ranges` S 하한 |
 | 1 m에서 놓침 | 탈락 `too_small` | `depth.min_area_px`, `selection.min_area_factor` |
 | 0.1~0.2 m에서 놓침 | 탈락 `no_depth`·`size_mismatch` | `depth.no_depth_min_area`, `depth.max_short_m`·`max_long_m` |
-| 다른 파란 물체 오검출 | 목표 없는 장면의 검출 | `hsv_ranges` S 하한↑, `max_aspect`·`min_extent` 엄격히 |
+| 다른 파란 물체 오검출 | 목표 없는 장면의 검출 | `hsv_ranges` S 하한↑, `min_extent`·`min_solidity` 엄격히 |
+| 사각 면이 아닌 파란 물체(원·타원·고리) 오검출 | 탈락 사유에 `not_box`가 없음 | `selection.box_fit` (`base`, `pixel` 낮추면 엄격, `min_px` 낮추면 먼 거리까지 검사) |
+| 비스듬한·모서리 방향 큐브를 놓침 | 탈락 `not_box`·`size_mismatch` | `box_fit.base`·`pixel`↑, `depth.max_short_m`(이론 최대 5.4 cm) |
+| 화면 가장자리·손에 가려 일부만 보일 때 놓침 | 탈락 `bad_aspect`·`low_extent`·`size_mismatch` | `selection.partial` (`max_aspect`, `front_margin_*`, `front_ratio`, `ring_front_ratio`, `min_area_m2`) |
+
+사각 면으로 된 상자인지(`selection.box_fit`): 상자 실루엣은 어느 방향에서도 꼭짓점 4~6개 볼록 다각형이다.
+볼록껍질을 6각형 이하로 근사했을 때의 평균 틈(넓이 차 ÷ 둘레 ÷ √넓이)이 크면 곡선 테두리(원·타원·고리)로 보고 `not_box`.
+실루엣이 `min_px`(500 px, 약 0.7 m)보다 작으면 해상도가 부족해 검사하지 않는다. 반원처럼 직선 변이 있는 곡선 물체는 통과한다.
+
+일부만 보이는 큐브(`selection.partial`): 모양·넓이 하한에 걸려도 **화면 가장자리에 잘렸거나**(border)
+**뎁스로 본 오목부·둘레가 큐브보다 가까울 때**(손가락 등 앞 물체, occluded)만 기준을 완화한다. 크기 상한은 그대로.
+홈·구멍이 있는 다른 물체는 오목부로 뒤쪽 배경이 보여 완화되지 않는다. 검출 화면 둘째 줄에 `PARTIAL(border|occluded)`, 기록 JSON에 `partial`.
 
 설정을 고친 뒤 노드만 다시 켜면 적용된다(재빌드 불필요).
