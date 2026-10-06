@@ -33,7 +33,7 @@ struct Axis {
 // Home-relative limits, rounded inward to whole encoder ticks.
 Axis axes[AXES] = {
   {11, 0, -1024, 1024},    // pan: -90 to +90 degrees
-  {12, 2048, -796, 170}    // tilt: -70 to +15 degrees
+  {12, 2048, -796, 341}    // tilt: -70 to +30 degrees
 };
 int32_t requested[AXES] = {};
 bool faulted = false, command_active = false;

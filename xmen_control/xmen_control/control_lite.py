@@ -12,7 +12,7 @@ PERIOD, TIMEOUT = 0.01, 0.2
 MAX_SPEED, HOME_SPEED, HOME_TIMEOUT = 1.0, 0.3, 30.0
 TICK_RAD = 2 * math.pi / 4096
 HOME_TOLERANCE, SETTLE_TIME = 8 * TICK_RAD, 0.2
-POSITION_LIMITS = ((-1024, 1024), (-796, 170))  # pan/tilt encoder ticks
+POSITION_LIMITS = ((-1024, 1024), (-796, 341))  # pan/tilt encoder ticks
 POSITION_TOLERANCE = 8  # match the firmware feedback tolerance
 
 
