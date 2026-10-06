@@ -259,7 +259,7 @@ def montage(cfgs, samples, out, dists, lights):
             for d in dists:
                 s = rows.get(ln, {}).get(d)
                 if s is None:
-                    tiles.append(np.zeros((120, 160, 3), np.uint8))
+                    tiles.append(np.full((180, 240, 3), 40, np.uint8))   # 빠진 조건(다른 칸과 같은 크기)
                     continue
                 v, _, det, _ = judge(cfg, s)
                 frame, g = detector.preprocess(s['frame'], cfg)
@@ -289,8 +289,9 @@ def main():
     p.add_argument('--no-depth', action='store_true', help='--dataset: 저장된 뎁스를 쓰지 않고 색·모양만으로 평가')
     a = p.parse_args()
     samples, info = sim_samples(a.seeds) if a.sim else dataset_samples(a.dataset, not a.no_depth)
-    lights = [l for l in LIGHT if any(s['light'] == l for s in samples)] or \
-        sorted({s['light'] for s in samples})
+    present = {s['light'] for s in samples}
+    order = list(LIGHT) + ['dark', 'normal', 'bright']           # 모의 이름 + 실제 수집 이름 순서
+    lights = [l for l in dict.fromkeys(order) if l in present] + sorted(present - set(order))
     dists = sorted({s['distance'] for s in samples if s['distance'] is not None})
     a.out.mkdir(parents=True, exist_ok=True)
     md = [f"# 블루큐브 인식률 평가 ({'모의' if a.sim else '실제 데이터'})\n",
