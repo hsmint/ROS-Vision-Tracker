@@ -24,13 +24,17 @@ constexpr uint16_t PROFILE = 112, GOAL = 116, POSITION = 132;
 
 struct Axis {
   uint8_t id;
-  int32_t home, travel;
+  int32_t home, lower, upper;
   int32_t position, origin, speed_limit, applied;
   int32_t profile, goal;
   bool ready;
 };
 
-Axis axes[AXES] = {{11, 0, 2048}, {12, 2048, 1536}};
+// Home-relative limits, rounded inward to whole encoder ticks.
+Axis axes[AXES] = {
+  {11, 0, -1024, 1024},    // pan: -90 to +90 degrees
+  {12, 2048, -796, 170}    // tilt: -70 to +15 degrees
+};
 int32_t requested[AXES] = {};
 bool faulted = false, command_active = false;
 uint32_t command_ms = 0, cycle_us = 0, sample = 0;
@@ -83,7 +87,8 @@ bool readPosition() {
   for (uint8_t i = 0; i < AXES; ++i) {
     memcpy(&axes[i].position, replies.xel[i].data, 4);
     int64_t relative = (int64_t)axes[i].position - axes[i].origin;
-    if (llabs(relative) > axes[i].travel + TRAVEL_TOLERANCE)
+    if (relative < axes[i].lower - TRAVEL_TOLERANCE ||
+        relative > axes[i].upper + TRAVEL_TOLERANCE)
       return false;
   }
   if (!readBoth(Reg::TORQUE, 7)) return false;
@@ -131,7 +136,7 @@ bool writeSpeed() {
     if (speed != axis.applied) {
       axis.profile = speed == 0 ? 1 : abs(speed);
       axis.goal = speed == 0 ? axis.position :
-        axis.origin + (speed > 0 ? axis.travel : -axis.travel);
+        axis.origin + (speed > 0 ? axis.upper : axis.lower);
     }
     // Profile zero means unlimited speed, so zero commands hold position.
     int32_t data[] = {axis.profile, axis.goal};
@@ -166,9 +171,10 @@ bool prepareMotor(uint8_t i) {
   int32_t relative = ((int64_t)axis.position - axis.home) % 4096;
   if (relative > 2048) relative -= 4096;
   if (relative < -2048) relative += 4096;
-  if (abs(relative) > axis.travel) return false;
+  if (relative < axis.lower || relative > axis.upper) return false;
   int64_t origin = (int64_t)axis.position - relative;
-  if (llabs(origin) + axis.travel > MAX_POSITION) return false;
+  if (origin + axis.lower < -MAX_POSITION ||
+      origin + axis.upper > MAX_POSITION) return false;
   axis.origin = origin;
   axis.profile = 1;
   axis.goal = axis.position;
