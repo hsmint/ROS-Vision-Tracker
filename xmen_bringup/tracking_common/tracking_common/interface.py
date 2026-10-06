@@ -61,7 +61,7 @@ TOPICS = {
         fields={'data': 'OK | NO_TARGET | CAMERA_STALL'},
         rate='상태가 바뀔 때 + 1 Hz'),
     'gimbal_cmd': dict(
-        name='/gimbal/cmd_vel', type='geometry_msgs/msg/Twist', qos=CMD_QOS,
+        name='/cmd_vel', type='geometry_msgs/msg/Twist', qos=CMD_QOS,
         publisher='tracking_controller', subscriber='motor_driver',
         fields={
             'angular.z': '팬(좌우) 축 각속도 [rad/s], REP-103: + = 왼쪽(반시계). '

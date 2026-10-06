@@ -1,4 +1,4 @@
-"""motor_driver — /gimbal/cmd_vel(팬 angular.z, 틸트 angular.y)을 하드웨어에 전달하는 유일한 노드.
+"""motor_driver — /cmd_vel(팬 angular.z, 틸트 angular.y)을 하드웨어에 전달하는 유일한 노드.
 
 책임: 출력 허용 여부(output_enabled), 명령 감시(watchdog), 하드웨어 한계.
 output_enabled=false(기본)이면 하드웨어에 쓰지 않고 '쓸 값'만 로그로 남긴다.

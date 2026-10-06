@@ -1,5 +1,5 @@
 """interface_check — 실행 중인 그래프가 interface.py(=보고서 인터페이스 표)와 일치하는지 검사하고,
-/target·/perception_status·/tracking_status·/gimbal/cmd_vel을 기록한다(시험 도구).
+/target·/perception_status·/tracking_status·/cmd_vel을 기록한다(시험 도구).
 
 검사: 토픽 타입, 발행/구독 노드, 발행·구독 QoS(신뢰성·depth), 실측 주기,
 구독 측 호환성(reliable 구독자는 best-effort /target을 받지 못함 → incompatible QoS 이벤트).

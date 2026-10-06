@@ -24,7 +24,7 @@ self.pub = self.create_publisher(Twist, I.TOPICS['gimbal_cmd']['name'], I.CMD_QO
 [D435] ══USB══▶ target_detector   (pyrealsense2로 직접 연다. 영상 토픽 없음)
 
 공통
-target_detector ──/target──▶ tracking_controller ──/gimbal/cmd_vel──▶ motor_driver ──X── (하드웨어 미연결)
+target_detector ──/target──▶ tracking_controller ──/cmd_vel──▶ motor_driver ──X── (하드웨어 미연결)
       │                            │      ▲
       └─/perception_status         │      └── /search (액션 요청)
                                    └─/tracking_status
@@ -46,7 +46,7 @@ target_detector ──/target──▶ tracking_controller ──/gimbal/cmd_vel
 | `/camera/camera/rgbd` (방식 B) | `realsense2_camera_msgs/RGBD` | realsense2_camera | target_detector (`source:=ros`), camera_viewer | 발행 reliable keep_last 1 / 구독 reliable keep_last 5 | 30 Hz |
 | `/target` | `geometry_msgs/PointStamped` | target_detector | tracking_controller | best-effort, keep_last 1 | 영상마다 (약 30 Hz) |
 | `/perception_status` | `std_msgs/String` | target_detector | (모니터링) | reliable, keep_last 1 | 상태 변화 시 + 1 Hz |
-| `/gimbal/cmd_vel` | `geometry_msgs/Twist` | tracking_controller | motor_driver | reliable, keep_last 1 | 20 Hz 고정 |
+| `/cmd_vel` | `geometry_msgs/Twist` | tracking_controller | motor_driver | reliable, keep_last 1 | 20 Hz 고정 |
 | `/tracking_status` | `std_msgs/String` | tracking_controller | (모니터링·기록) | reliable, keep_last 1 | 20 Hz |
 
 ### `/target` 필드
@@ -62,7 +62,7 @@ target_detector ──/target──▶ tracking_controller ──/gimbal/cmd_vel
 - 정상 영상에서 목표가 없어도 **z=0으로 발행**한다(미검출).
 - 새 영상이 없으면 **발행하지 않는다**(통신 중단). 받는 쪽은 "z=0"과 "토픽 침묵"을 구분한다.
 
-### `/gimbal/cmd_vel` 필드
+### `/cmd_vel` 필드
 
 | 필드 | 값 | 부호 (REP-103) |
 |---|---|---|
@@ -136,7 +136,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | 구분 | 내용 |
 |---|---|
 | 수신 | `/target` |
-| 송신 | `/gimbal/cmd_vel`, `/tracking_status`, `/search` 서버 |
+| 송신 | `/cmd_vel`, `/tracking_status`, `/search` 서버 |
 | 동작 | `/target` 수신 시 신선도만 판정해 저장 → **20 Hz 타이머**가 상태 결정·명령 계산·발행(입력 주기와 무관하게 일정 주기) |
 | 거르는 것 | NaN·범위 밖 값(`invalid`), 같은·이전 stamp(`old_or_duplicate_stamp`), 촬영 시각이 0.5 s보다 오래됨(`too_old`) |
 | 정지 판단 | z=0 첫 프레임부터 `LOST`(0), 마지막 신선한 입력 후 0.5 s → `TIMEOUT`(0) |
@@ -146,7 +146,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 
 | 구분 | 내용 |
 |---|---|
-| 수신 | `/gimbal/cmd_vel` |
+| 수신 | `/cmd_vel` |
 | 송신 | 없음 (하드웨어 출력 지점. 현재 `output_enabled: false` → 로그만) |
 | 동작 | 축별 상한(`hw_max_speed`, `hw_max_speed_tilt`)으로 다시 제한 → 값이 바뀔 때 로그 `[OFF] pan=… tilt=… rad/s` |
 | 정지 판단 | 0.2 s 명령 없음 → 두 축 0 (`명령 끊김(watchdog)`) |
@@ -157,9 +157,9 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | 노드 | 수신 | 송신 | 용도 |
 |---|---|---|---|
 | `camera_viewer` (target_perception) | `/camera/camera/rgbd` | 없음 | realsense2_camera 방식일 때 영상 확인 |
-| `input_test` | `/gimbal/cmd_vel`, `/tracking_status` | `/target` (모의) | 모의 입력 11단계 → PASS/FAIL, CSV |
-| `gimbal_sim` | `/gimbal/cmd_vel` | `/target` (모의) | 명령을 적분한 가상 짐벌로 부호 시험 |
-| `search_test` | `/gimbal/cmd_vel`, `/tracking_status` | `/target` (모의), `/search` 요청 | 액션 5가지 경우 |
+| `input_test` | `/cmd_vel`, `/tracking_status` | `/target` (모의) | 모의 입력 11단계 → PASS/FAIL, CSV |
+| `gimbal_sim` | `/cmd_vel` | `/target` (모의) | 명령을 적분한 가상 짐벌로 부호 시험 |
+| `search_test` | `/cmd_vel`, `/tracking_status` | `/target` (모의), `/search` 요청 | 액션 5가지 경우 |
 | `interface_check` | 위 토픽 4개 전부 | 없음 | 타입·QoS·주기·호환성 검사 + 기록 |
 
 주의: 시험 노드는 `/target`을 **모의로 발행**한다. detector와 동시에 띄우면 값이 섞인다 —
@@ -199,9 +199,9 @@ ros2 node info /target_detector                           # 노드가 받는·�
 ros2 topic info -v /target                                # 발행·구독 노드와 QoS
 ros2 topic hz /camera/camera/rgbd                         # 방식 B, 약 30 Hz
 ros2 topic hz /target --qos-reliability best_effort       # 약 30 Hz (RPi 29.7)
-ros2 topic hz /gimbal/cmd_vel                             # 20 Hz (RPi 20.0)
+ros2 topic hz /cmd_vel                             # 20 Hz (RPi 20.0)
 ros2 topic echo /target --qos-reliability best_effort
-ros2 topic echo /gimbal/cmd_vel
+ros2 topic echo /cmd_vel
 ros2 topic echo /tracking_status
 ros2 topic echo /perception_status
 ros2 action send_goal /search tracking_interfaces/action/Search "{direction: 1.0, speed: 0.2, timeout: 3.0}" --feedback

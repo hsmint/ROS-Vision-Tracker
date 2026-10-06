@@ -6,7 +6,7 @@
 
   A: [D435] → target_detector(pyrealsense2 직접) ─┐
   B: [D435] → realsense2_camera ─/camera/camera/rgbd─▶ target_detector ─┤
-                                                                        └▶ /target → tracking_controller → /gimbal/cmd_vel → motor_driver
+                                                                        └▶ /target → tracking_controller → /cmd_vel → motor_driver
                                                  /perception_status ◀┘                 └ /tracking_status
 노드 파라미터: target_bringup/config/tracking.yaml (게인·부호·데드밴드·주기·타임아웃·출력 ON/OFF)
 검출 설정:     target_perception/config/detector.yaml

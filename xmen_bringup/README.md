@@ -4,8 +4,8 @@ ROS 2 Lyrical · Python(rclpy) · Intel RealSense D435 · 목표: 파란 3×3×6
 RPi에서 검출·제어 계산 → OpenCR(Dynamixel 팬·틸트)로 명령.
 
 ```
-[D435] ──▶ target_detector ─/target─▶ tracking_controller ─/gimbal/cmd_vel─▶ motor_driver ─(시리얼, 미구현)─▶ OpenCR
-               └─/perception_status        ├─/tracking_status                (출력 OFF, 로그만)
+[D435] ──▶ target_detector ─/target─▶ tracking_controller ─/cmd_vel─▶ motor_driver ─(시리얼, 미구현)─▶ OpenCR
+               └─/perception_status        ├─/tracking_status         (출력 OFF, 로그만)
                                            └─/search (액션)
 ```
 노드별 수신·송신, 메시지 필드, QoS, 정지 규칙 → **[TOPICS.md](TOPICS.md)**
@@ -105,7 +105,7 @@ python3 -c "import pyrealsense2 as rs; print(rs.__version__, len(rs.context().qu
 
 ```bash
 ros2 topic hz /target --qos-reliability best_effort    # 약 30 Hz
-ros2 topic hz /gimbal/cmd_vel                           # 20 Hz
+ros2 topic hz /cmd_vel                           # 20 Hz
 ros2 topic echo /tracking_status                        # 물체를 비추면 TRACKING
 ros2 node info /tracking_controller                     # 받는·내는 토픽
 top -p $(pgrep -d, -x detector),$(pgrep -d, -f realsense2_camera_node)   # CPU (100% = 코어 1개)
@@ -131,7 +131,7 @@ vcgencmd measure_temp; vcgencmd get_throttled           # RPi 온도·클럭 저
 | 항목 | PC (방식 A) | RPi (방식 B) | RPi (방식 A) |
 |---|---|---|---|
 | `/target` | 29.96 Hz | 29.7 Hz (간격 17~54 ms) | 미측정 |
-| `/gimbal/cmd_vel` | 20.0 Hz | 20.0 Hz (간격 43~54 ms) | 미측정 |
+| `/cmd_vel` | 20.0 Hz | 20.0 Hz (간격 43~54 ms) | 미측정 |
 | CPU 프로세스 | detector 23% | detector 94% + 카메라 노드 61% = **155%** | detector **117%** |
 | CPU Python 처리 스레드 | — | 94% (detector 전체) | **약 70%** (`realsense_loop`) |
 | 보드 전체 유휴 | — | 약 50% | 약 60% |
