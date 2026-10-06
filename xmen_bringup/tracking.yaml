@@ -22,8 +22,6 @@ motor_driver:
     hw_max_speed: 0.6     # [rad/s] 팬
     hw_max_speed_tilt: 0.4  # [rad/s] 틸트
     # OpenCR 시리얼: "V <팬> <틸트>" 각속도 [deg/s] = /cmd_vel [rad/s] × 57.3 × 부호. 정지 = "V 0.00 0.00"을 계속 전송
-    port: /dev/ttyACM0    # 시리얼 모니터·main.py와 동시에 열 수 없다
-    baud: 115200
     sign_pan: 1.0         # /cmd_vel 팬(+ 왼쪽) → OpenCR 팬 부호. 작은 명령으로 실제 방향 확인 후 결정
     sign_tilt: 1.0        # /cmd_vel 틸트(+ 아래) → OpenCR 틸트 부호. 실제 모터로 확인
     # 회전 범위 — OpenCR이 보내는 현재 각도("P <팬> <틸트>" deg)로 확인. 범위 끝이면 바깥 방향 속도 0
