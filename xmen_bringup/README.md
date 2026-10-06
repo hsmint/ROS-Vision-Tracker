@@ -16,7 +16,7 @@ RPi에서 검출·제어 계산 → OpenCR(Dynamixel 팬·틸트)로 명령.
 |---|---|---|---|
 | `xmen_bringup` (통합) | `tracking_interfaces` | — | `/search` 액션 정의 (`action/Search.action`) |
 | `xmen_bringup` (통합) | `tracking_common` | — | `interface.py` — 토픽 이름·타입·QoS·상태 값 단일 정의 |
-| `xmen_vision` (인지) | `target_perception` | `detector`, `camera_viewer` | 검출(`detector.py`), 설정(`config/detector.yaml`), `launch/perception.launch.py`, `launch/camera.launch.py` |
+| `xmen_vision` (인지) | `target_perception` | `detector`, `camera_viewer`, `tuning`, `evaluate` | 검출(`detector.py`), 설정(`config/detector.yaml`), `launch/perception.launch.py`, `launch/camera.launch.py`, 튜닝·평가 도구([xmen_vision/README.md](../xmen_vision/README.md)) |
 | `xmen_control` (제어) | `target_control` | `controller`, `motor_driver` | 팬·틸트 P 제어·상태·`/search` 서버, 하드웨어 출력(기본 OFF) |
 | `xmen_bringup` (통합) | `target_bringup` | `input_test`, `gimbal_sim`, `search_test`, `interface_check` | 전체 실행 launch, `config/tracking.yaml`(제어·구동 파라미터), 검증 launch |
 
