@@ -1,0 +1,5 @@
+control:
+  ros__parameters:
+    use_sim_time: false
+# port and auto_home are supplied by hardware_launch.py arguments.
+# xmen_control/control uses a fixed serial baud rate of 115200.
