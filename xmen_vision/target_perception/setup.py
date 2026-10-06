@@ -18,7 +18,6 @@ setup(
     description='인지: RealSense 영상 수신·확인, HSV·컨투어·뎁스 검출 → /target',
     license='Apache-2.0',
     entry_points={'console_scripts': [
-        'camera_viewer = target_perception.camera_viewer_node:main',
         'detector = target_perception.detector_node:main',
     ]},
 )
