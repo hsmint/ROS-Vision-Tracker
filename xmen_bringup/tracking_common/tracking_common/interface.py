@@ -71,6 +71,15 @@ TOPICS = {
             '나머지': '0 (사용하지 않음)',
         },
         rate='20 Hz 고정 주기. 정지 명령 = angular.z·angular.y 0.0을 계속 발행'),
+    'joint_states': dict(
+        name='/joint_states', type='sensor_msgs/msg/JointState', qos=STATE_QOS,
+        publisher='motor_driver', subscriber='(모니터링·기록·RViz)',
+        fields={
+            'header.stamp': 'OpenCR에서 각도를 받은 시각',
+            'name': "['pan_joint', 'tilt_joint']",
+            'position': '[rad] 원점(홈) 기준. 부호는 /cmd_vel과 같다(팬 + 왼쪽, 틸트 + 아래)',
+        },
+        rate='OpenCR이 현재 각도("P <팬> <틸트>")를 보낼 때마다. 받지 못하면 발행하지 않는다(추정값 발행 금지)'),
     'tracking_status': dict(
         name='/tracking_status', type='std_msgs/msg/String', qos=STATE_QOS,
         publisher='tracking_controller', subscriber='(모니터링·기록)',

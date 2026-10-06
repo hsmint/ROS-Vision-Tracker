@@ -4,7 +4,7 @@ ROS 2 Lyrical · Python(rclpy) · Intel RealSense D435 · 목표: 파란 3×3×6
 RPi에서 검출·제어 계산 → OpenCR(Dynamixel 팬·틸트)로 명령.
 
 ```
-[D435] ──▶ target_detector ─/target─▶ tracking_controller ─/cmd_vel─▶ motor_driver ─(시리얼, 미구현)─▶ OpenCR
+[D435] ──▶ target_detector ─/target─▶ tracking_controller ─/cmd_vel─▶ motor_driver ─(시리얼, 기본 OFF)─▶ OpenCR
                └─/perception_status        ├─/tracking_status         (출력 OFF, 로그만)
                                            └─/search (액션)
 ```

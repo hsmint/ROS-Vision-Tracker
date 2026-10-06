@@ -1,5 +1,5 @@
 """interface_check — 실행 중인 그래프가 interface.py(=보고서 인터페이스 표)와 일치하는지 검사하고,
-/target·/perception_status·/tracking_status·/cmd_vel을 기록한다(시험 도구).
+/target·/perception_status·/tracking_status·/cmd_vel(·/joint_states)을 기록한다(시험 도구).
 
 검사: 토픽 타입, 발행/구독 노드, 발행·구독 QoS(신뢰성·depth), 실측 주기,
 구독 측 호환성(reliable 구독자는 best-effort /target을 받지 못함 → incompatible QoS 이벤트).
@@ -14,12 +14,13 @@ from rclpy.event_handler import SubscriptionEventCallbacks
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import PointStamped, Twist
+from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
 from tracking_common import interface as I
 
 TYPES = {'geometry_msgs/msg/PointStamped': PointStamped, 'geometry_msgs/msg/Twist': Twist,
-         'std_msgs/msg/String': String}
+         'std_msgs/msg/String': String, 'sensor_msgs/msg/JointState': JointState}
 
 
 def qos_str(q):
@@ -63,7 +64,9 @@ class InterfaceCheck(Node):
             self.latest['cmd_tilt'] = round(m.angular.y, 4)
         elif key == 'perception_status':
             self.latest['perception'] = m.data
-        else:
+        elif key == 'joint_states':
+            self.latest['joint'] = [round(v, 4) for v in m.position]
+        elif key == 'tracking_status':
             # 컨트롤러는 같은 tick에 명령 → 상태 순으로 낸다. 상태 수신 시 기록하면 둘이 같은 tick이다.
             self.rows.append(dict(t=round(t, 3), target_x=self.latest.get('target', (None,))[0],
                                   target_z=self.latest.get('target', (None, None))[1],
