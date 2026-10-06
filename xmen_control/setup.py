@@ -20,7 +20,8 @@ setup(
     license='TODO: License declaration',
     entry_points={
         'console_scripts': [
-            'control = xmen_control.control:main'
+            'control = xmen_control.control:main',
+            'control_lite = xmen_control.control_lite:main',
         ],
     },
 )
