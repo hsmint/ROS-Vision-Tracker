@@ -21,5 +21,14 @@ motor_driver:
     cmd_timeout: 0.2      # [s] 명령이 끊기면 구동부에서도 정지(이중 안전)
     hw_max_speed: 0.6     # [rad/s] 팬
     hw_max_speed_tilt: 0.4  # [rad/s] 틸트
+    # OpenCR 시리얼: "V <팬> <틸트>" 각속도 [deg/s] = /cmd_vel [rad/s] × 57.3 × 부호. 정지 = "V 0.00 0.00"을 계속 전송
+    sign_pan: 1.0         # /cmd_vel 팬(+ 왼쪽) → OpenCR 팬 부호. 작은 명령으로 실제 방향 확인 후 결정
+    sign_tilt: 1.0        # /cmd_vel 틸트(+ 아래) → OpenCR 틸트 부호. 실제 모터로 확인
+    # 회전 범위 — OpenCR이 보내는 현재 각도("P <팬> <틸트>" deg)로 확인. 범위 끝이면 바깥 방향 속도 0
+    # 원점(홈) 기준, /cmd_vel 부호(팬 + 왼쪽, 틸트 + 아래). 임시값 — 실제 기구·케이블 여유로 정하고 펌웨어 상수와 맞춘다
+    pan_limit_deg: [-90.0, 90.0]
+    tilt_limit_deg: [-30.0, 30.0]
+    position_timeout: 0.5  # [s] 이보다 오래된 각도는 쓰지 않는다
+    require_position: false  # true: 현재 각도를 모르면 움직이지 않는다(펌웨어가 각도를 보내기 시작하면 true 권장)
 
 # target_detector 설정은 target_perception/config/detector.yaml (HSV·면적·해상도·뎁스 검증)
