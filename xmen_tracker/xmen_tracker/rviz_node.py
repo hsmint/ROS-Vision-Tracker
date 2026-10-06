@@ -1,7 +1,9 @@
 """Render tracker results on a remote PC without repeating detection."""
 
+import math
+
 from cv_bridge import CvBridge, CvBridgeError
-from geometry_msgs.msg import PointStamped, PolygonStamped, TransformStamped
+from geometry_msgs.msg import PointStamped, PolygonStamped, PoseStamped, TransformStamped
 from message_filters import Subscriber, TimeSynchronizer
 from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
@@ -10,6 +12,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, PointCloud2
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+from tf2_ros import Buffer, TransformListener, TransformException
 from visualization_msgs.msg import Marker
 
 from xmen_tracker.markers import target_marker
@@ -28,6 +31,11 @@ class RvizNode(Node):
         ).value
         if not 0 < self.marker_lifetime < float('inf'):
             raise ValueError('marker_lifetime must be finite and positive')
+        self.display_width = self.declare_parameter('display_width', 2.0).value
+        self.display_distance = self.declare_parameter('display_distance', 1.0).value
+        if not (math.isfinite(self.display_width) and self.display_width > 0
+                and math.isfinite(self.display_distance) and self.display_distance > 0):
+            raise ValueError('display_width and display_distance must be positive and finite')
         reliable = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         output_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
         self.annotated_publisher = self.create_publisher(Image, '/tracking/image', output_qos)
@@ -58,17 +66,39 @@ class RvizNode(Node):
         transform.child_frame_id = 'tracking_image'
         transform.transform.rotation.w = 1.0
         self.marker_tf.sendTransform(transform)
+        self.pose_frame = self.declare_parameter('pose_frame', 'root').value
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.pose_publisher = self.create_publisher(PoseStamped, '/camera/pose', output_qos)
+        self.pose_timer = self.create_timer(0.1, self.publish_camera_pose)
         self.get_logger().info(
-            'RViz outputs: /tracking/image, /tracking/image_plane, /target_marker'
+            'RViz outputs: /tracking/image, /tracking/image_plane, /target_marker, /camera/pose'
         )
+
+    def publish_camera_pose(self):
+        """Publish the camera body's current model pose, including pan and tilt."""
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                self.pose_frame, 'camera_link', rclpy.time.Time()
+            )
+        except TransformException:
+            return  # Wait for the model and joint transforms to arrive.
+        pose = PoseStamped()
+        pose.header = transform.header
+        pose.pose.position.x = transform.transform.translation.x
+        pose.pose.position.y = transform.transform.translation.y
+        pose.pose.position.z = transform.transform.translation.z
+        pose.pose.orientation = transform.transform.rotation
+        self.pose_publisher.publish(pose)
 
     def on_target(self, target):
         """Visualize control errors independently of image delivery."""
         marker = target_marker(target, self.marker_lifetime)
         # Match the upright image screen; sit slightly toward the viewer.
-        marker.pose.position.x = 0.99
-        marker.pose.position.y = -target.point.x
-        marker.pose.position.z = -target.point.y * self.image_aspect
+        marker.pose.position.x = self.display_distance - 0.005
+        marker.pose.position.y = -target.point.x * self.display_width / 2
+        marker.pose.position.z = -target.point.y * self.image_aspect * self.display_width / 2
+        marker.scale.x = marker.scale.y = marker.scale.z = self.display_width * 0.04
         self.marker_publisher.publish(marker)
 
     def on_image(self, image_msg, box_msg):
@@ -104,7 +134,8 @@ class RvizNode(Node):
             annotated.header = image_msg.header
             self.annotated_publisher.publish(annotated)
         if want_plane:
-            self.image_plane_publisher.publish(image_plane(overlay, image_msg.header.stamp))
+            self.image_plane_publisher.publish(image_plane(overlay, image_msg.header.stamp,
+                            display_width=self.display_width, distance=self.display_distance))
 
 
 def main(args=None):

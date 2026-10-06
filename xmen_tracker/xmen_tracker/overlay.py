@@ -6,16 +6,16 @@ from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
 
 
-def image_plane(rgb, stamp):
-    """Place RGB pixels upright at x=1, with forward X, left Y, and up Z."""
+def image_plane(rgb, stamp, *, display_width=2.0, distance=1.0):
+    """Place RGB pixels on a configurable flat display (not measured geometry)."""
     height, width = rgb.shape[:2]
     points = np.empty((height, width), dtype=[
         ('x', '<f4'), ('y', '<f4'), ('z', '<f4'), ('rgb', '<u4'),
     ])
-    points['x'] = 1.0
-    points['y'] = (width / 2 - np.arange(width, dtype=np.float32)) * (2.0 / width)
+    points['x'] = distance
+    points['y'] = (width / 2 - np.arange(width, dtype=np.float32)) * (display_width / width)
     points['z'] = ((height / 2 - np.arange(height, dtype=np.float32))
-                   * (2.0 / width))[:, None]
+                   * (display_width / width))[:, None]
     colors = rgb.astype(np.uint32)
     points['rgb'] = (colors[:, :, 0] << 16) | (colors[:, :, 1] << 8) | colors[:, :, 2]
     fields = [PointField(name=name, offset=offset, datatype=PointField.FLOAT32, count=1)
