@@ -18,7 +18,8 @@ source install/setup.bash
 ros2 run xmen_vision realsense_node
 ```
 
-Topics (`sensor_msgs/msg/Image`, best-effort sensor-data QoS):
+Topics (`sensor_msgs/msg/Image`, reliable QoS with a queue depth of 5).
+Both reliable and best-effort subscribers are supported:
 
 | Topic | Encoding | Data |
 | --- | --- | --- |

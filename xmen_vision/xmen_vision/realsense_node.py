@@ -5,7 +5,7 @@ import rclpy
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 import pyrealsense2 as rs
 
@@ -56,12 +56,13 @@ class RealSenseNode(Node):
         
         self.frame_id = values['frame_id']
         
+        image_qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE)
         self.color_publisher = self.create_publisher(
-            Image, 'camera/color/image_raw', qos_profile_sensor_data
+            Image, 'camera/color/image_raw', image_qos
         )
 
         self.depth_publisher = self.create_publisher(
-            Image, 'camera/aligned_depth_to_color/image_raw', qos_profile_sensor_data
+            Image, 'camera/aligned_depth_to_color/image_raw', image_qos
         )
 
         config = rs.config()
