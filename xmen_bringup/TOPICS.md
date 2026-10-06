@@ -1,7 +1,7 @@
 # 노드 수신·송신 (토픽·액션)
 
-xmen_vision 패키지의 노드가 무엇을 받고 무엇을 내는지 정리한 문서다. 토픽 이름·타입·QoS는 모두
-`tracking_common/tracking_common/interface.py` 한 곳에서 정의하고, 노드는 그 값을 가져다 쓴다.
+Xmen 저장소의 ROS 노드(인지 `xmen_vision`, 제어 `xmen_control`, 통합 `xmen_bringup`)가 무엇을 받고 무엇을 내는지
+정리한 문서다. 토픽 이름·타입·QoS는 모두 `xmen_bringup/tracking_common/tracking_common/interface.py` 한 곳에서 정의하고, 노드는 그 값을 가져다 쓴다.
 **이름·QoS를 바꿀 때는 interface.py만 고친다** — 노드 코드에 토픽 이름을 직접 쓰지 않는다.
 
 ```python
@@ -110,7 +110,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 
 ## 4. 노드별 수신·송신
 
-### realsense2_camera (방식 B, target_perception/launch/camera.launch.py)
+### realsense2_camera (방식 B, xmen_vision/target_perception/launch/camera.launch.py)
 
 | 구분 | 내용 |
 |---|---|
@@ -119,7 +119,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | 설정 | 640×360@30, `align_depth`, `enable_sync`, `enable_rgbd`, `initial_reset`, 적외선·IMU·점구름 끔 |
 | 실행 | `ros2 launch target_perception camera.launch.py viewer:=false` |
 
-### target_detector (target_perception/detector_node.py)
+### target_detector (xmen_vision/target_perception/target_perception/detector_node.py)
 
 | 구분 | 내용 |
 |---|---|
@@ -131,7 +131,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | 정지 판단 | 0.3 s 새 영상 없음 → `CAMERA_STALL`, 발행 중단 |
 | 주요 파라미터 | `config`(detector.yaml), `show`(검출 화면), `target_topic`·`status_topic`(재처리 시 `/target_replay`·`/perception_status_replay`) |
 
-### tracking_controller (target_control/controller_node.py)
+### tracking_controller (xmen_control/target_control/target_control/controller_node.py)
 
 | 구분 | 내용 |
 |---|---|
@@ -140,9 +140,9 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | 동작 | `/target` 수신 시 신선도만 판정해 저장 → **20 Hz 타이머**가 상태 결정·명령 계산·발행(입력 주기와 무관하게 일정 주기) |
 | 거르는 것 | NaN·범위 밖 값(`invalid`), 같은·이전 stamp(`old_or_duplicate_stamp`), 촬영 시각이 0.5 s보다 오래됨(`too_old`) |
 | 정지 판단 | z=0 첫 프레임부터 `LOST`(0), 마지막 신선한 입력 후 0.5 s → `TIMEOUT`(0) |
-| 파라미터 | `target_bringup/config/tracking.yaml` — kp·cmd_sign·deadband·max_speed (팬), *_tilt (틸트), rate_hz, timeout, max_input_age, tilt_enabled |
+| 파라미터 | `xmen_bringup/target_bringup/config/tracking.yaml` — kp·cmd_sign·deadband·max_speed (팬), *_tilt (틸트), rate_hz, timeout, max_input_age, tilt_enabled |
 
-### motor_driver (target_control/motor_driver_node.py)
+### motor_driver (xmen_control/target_control/target_control/motor_driver_node.py)
 
 | 구분 | 내용 |
 |---|---|
@@ -152,7 +152,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | 정지 판단 | 0.2 s 명령 없음 → 두 축 0 (`명령 끊김(watchdog)`) |
 | 미구현 | OpenCR 시리얼 전송, 현재 각도(`/joint_states`) 발행 |
 
-### 보조·검증 노드 (target_bringup, 모터 출력 OFF)
+### 보조·검증 노드 (xmen_bringup/target_bringup, 모터 출력 OFF)
 
 | 노드 | 수신 | 송신 | 용도 |
 |---|---|---|---|
