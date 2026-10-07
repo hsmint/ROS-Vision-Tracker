@@ -1,0 +1,2 @@
+file,tag,kp,kp_tilt,frames,duration,fps,detect,track,n_used,n_excluded,rmse_ex,rmse_ey,max_abs_ex,age
+track_p4_normal_20261006_205250.csv,p4_normal,,,1274,42.46,29.98,0.764,0.964,938,336,0.2466,0.4066,0.953,626.1159
