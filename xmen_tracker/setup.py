@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'tracker_node = xmen_tracker.tracker_node:main',
+            'preview_node = xmen_tracker.preview_node:main',
             'rviz_node = xmen_tracker.rviz_node:main',
         ],
     },

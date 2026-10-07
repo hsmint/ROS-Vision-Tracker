@@ -10,10 +10,14 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import String
 
 from xmen_tracker.detector import detect_target
+
+JOINT_LIMITS_DEG = {'pan': (-180.0, 180.0), 'tilt': (-120.0, 120.0)}
+# Match control_lite's eight encoder ticks of position tolerance.
+LIMIT_WARNING_TOLERANCE_DEG = 8 * 360.0 / 4096
 
 
 def clamp(value, minimum, maximum):
@@ -28,6 +32,7 @@ class TrackerNode(Node):
         super().__init__('tracker_node')
         self.bridge = CvBridge()
         self.latest_frame = None
+        self.pending_frames = None
         self.last_stamp_ns = None
         self.last_target = None
         self.last_rx = self.get_clock().now()
@@ -37,10 +42,10 @@ class TrackerNode(Node):
             'min_area': 60.0, 'max_area_ratio': 0.6,
             'min_depth_m': 0.1, 'max_depth_m': 1.2,
             'min_valid_depth_ratio': 0.3, 'stall_timeout': 0.5,
-            'kp': 1.0, 'cmd_sign': -1.0, 'deadband': 0.05, 'max_speed': 0.6,
-            'kp_tilt': 0.8, 'cmd_sign_tilt': 1.0, 'deadband_tilt': 0.05,
-            'max_speed_tilt': 0.4, 'tilt_enabled': True,
-            'rate_hz': 20.0, 'timeout': 0.5, 'max_input_age': 0.5,
+            'kp': 1.5, 'cmd_sign': -1.0, 'deadband': 0.05, 'max_speed': 0.9,
+            'kp_tilt': 1.2, 'cmd_sign_tilt': 1.0, 'deadband_tilt': 0.05,
+            'max_speed_tilt': 0.6, 'tilt_enabled': True,
+            'rate_hz': 20.0, 'tracking_hz': 20.0, 'timeout': 0.5, 'max_input_age': 0.5,
         }
         self.settings = {
             name: self.declare_parameter(
@@ -69,7 +74,7 @@ class TrackerNode(Node):
         for name in ('kp', 'kp_tilt', 'max_speed', 'max_speed_tilt'):
             if not math.isfinite(p[name]) or p[name] < 0:
                 raise ValueError(f'{name} must be finite and nonnegative')
-        for name in ('rate_hz', 'timeout', 'max_input_age'):
+        for name in ('rate_hz', 'tracking_hz', 'timeout', 'max_input_age'):
             if not math.isfinite(p[name]) or p[name] <= 0:
                 raise ValueError(f'{name} must be finite and positive')
         for name in ('deadband', 'deadband_tilt'):
@@ -90,6 +95,13 @@ class TrackerNode(Node):
         self.target_publisher = self.create_publisher(PointStamped, '/target', target_qos)
         self.cmd_publisher = self.create_publisher(Twist, '/cmd_vel', status_qos)
         self.cmd_timer = self.create_timer(1.0 / p['rate_hz'], self.publish_command)
+        self.tracking_timer = self.create_timer(
+            1.0 / p['tracking_hz'], self.process_latest_frame
+        )
+        self.joint_subscriber = self.create_subscription(
+            JointState, '/joint_states', self.on_joint_states,
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT),
+        )
         self.bbox_publisher = self.create_publisher(
             PolygonStamped, '/tracking/bbox', QoSProfile(
                 depth=10, reliability=ReliabilityPolicy.RELIABLE
@@ -119,7 +131,45 @@ class TrackerNode(Node):
         self.synchronizer.registerCallback(self.on_frames)
         self.get_logger().info('Waiting for synchronized RGB and aligned depth images.')
 
+    def on_joint_states(self, message):
+        """Warn from measured joint angles, including encoder settling tolerance."""
+        if len(message.name) != len(message.position):
+            return
+        reached = []
+        for name, radians in zip(message.name, message.position):
+            if name not in JOINT_LIMITS_DEG or not math.isfinite(radians):
+                continue
+            degrees = math.degrees(radians)
+            lower, upper = JOINT_LIMITS_DEG[name]
+            if degrees <= lower + LIMIT_WARNING_TOLERANCE_DEG:
+                reached.append(f'{name}={degrees:.2f} deg (lower limit {lower:g} deg)')
+            elif degrees >= upper - LIMIT_WARNING_TOLERANCE_DEG:
+                reached.append(f'{name}={degrees:.2f} deg (upper limit {upper:g} deg)')
+        if reached:
+            self.get_logger().warning(
+                'Joint travel limit reached: ' + '; '.join(reached),
+                throttle_duration_sec=5.0,
+            )
+
     def on_frames(self, color_msg, depth_msg):
+        """Retain only the newest synchronized pair until the detection timer."""
+        stamp = color_msg.header.stamp
+        stamp_ns = stamp.sec * 1000000000 + stamp.nanosec
+        if self.last_stamp_ns is not None and stamp_ns <= self.last_stamp_ns:
+            return
+        if self.pending_frames is not None:
+            pending_stamp = self.pending_frames[0].header.stamp
+            if stamp_ns <= pending_stamp.sec * 1000000000 + pending_stamp.nanosec:
+                return
+        self.pending_frames = (color_msg, depth_msg)
+
+    def process_latest_frame(self):
+        """Process at most one fresh pair per tick; never replay a stored pair."""
+        pair, self.pending_frames = self.pending_frames, None
+        if pair is not None:
+            self.process_frame(*pair)
+
+    def process_frame(self, color_msg, depth_msg):
         """Convert a matched pair; depth[y, x] is in meters at RGB pixel (x, y)."""
         stamp = color_msg.header.stamp
         stamp_ns = stamp.sec * 1000000000 + stamp.nanosec
@@ -177,9 +227,12 @@ class TrackerNode(Node):
         self.bbox_publisher.publish(box)
         self.last_stamp_ns = stamp_ns
         self.last_rx = self.get_clock().now()
+        had_target = self.last_target is not None and self.last_target[2] > 0
         self.last_target = coordinates
         self.set_status('OK' if target.point.z > 0 else 'NO_TARGET')
-        if target.point.z <= 0:
+        # Stop immediately on target loss; the 20 Hz timer maintains the stop.
+        # Repeating this on every empty frame adds camera-rate command traffic.
+        if had_target and target.point.z <= 0:
             self.publish_command()
 
     @staticmethod

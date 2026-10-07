@@ -12,7 +12,7 @@ PERIOD, TIMEOUT = 0.01, 0.2
 MAX_SPEED, HOME_SPEED, HOME_TIMEOUT = 1.0, 0.3, 30.0
 TICK_RAD = 2 * math.pi / 4096
 HOME_TOLERANCE, SETTLE_TIME = 8 * TICK_RAD, 0.2
-POSITION_LIMITS = ((-1024, 1024), (-796, 341))  # pan/tilt encoder ticks
+POSITION_LIMITS = ((-2048, 2048), (-1365, 1365))  # pan +/-180, tilt +/-120 deg
 POSITION_TOLERANCE = 8  # match the firmware feedback tolerance
 
 
@@ -46,14 +46,32 @@ class OpenCRBridge(Node):
 
     def read_position(self, line, now):
         fields = line.split()
+        if len(fields) == 7 and fields[0] == b'F1':
+            reason = fields[1].decode('ascii')
+            motor, register, value, library, status = map(int, fields[2:])
+            raise ValueError(
+                f'OpenCR fault: {reason}; motor_id={motor}, '
+                f'register={register}, value={value}, '
+                f'library_error={library}, status_error={status}')
         if len(fields) != 5 or fields[0] != b'P1':
             raise ValueError('Unexpected firmware reply')
         sample, pan, tilt, fault = map(int, fields[1:])
-        in_range = all(low - POSITION_TOLERANCE <= p <=
-                       high + POSITION_TOLERANCE
-                       for p, (low, high) in zip((pan, tilt), POSITION_LIMITS))
-        if fault or not 0 <= sample <= 0xffffffff or not in_range:
-            raise ValueError('OpenCR fault or invalid position')
+        details = f'sample={sample}, pan={pan}, tilt={tilt}, fault={fault}'
+        if fault:
+            raise ValueError(
+                f'OpenCR firmware fault latched ({details}); '
+                'check motor power/communication, startup position and motor '
+                'status, then restart the OpenCR board before restarting '
+                'the bridge')
+        if not 0 <= sample <= 0xffffffff:
+            raise ValueError(f'Invalid OpenCR sample counter ({details})')
+        for name, position, (low, high) in zip(
+                ('pan', 'tilt'), (pan, tilt), POSITION_LIMITS):
+            if not low - POSITION_TOLERANCE <= position <= high + POSITION_TOLERANCE:
+                raise ValueError(
+                    f'OpenCR {name} position out of range ({details}); '
+                    f'expected {low}..{high} ticks with '
+                    f'{POSITION_TOLERANCE}-tick tolerance')
         if sample == self.sample: return
         self.sample, self.sample_at = sample, now
         self.position = [pan * TICK_RAD, tilt * TICK_RAD]
@@ -109,7 +127,7 @@ class OpenCRBridge(Node):
         except (ValueError, OSError) as error:
             self.close()
             self.timer.cancel()
-            self.get_logger().error(f'{error}; restart the bridge')
+            self.get_logger().error(f'{error}; bridge stopped')
 
     def close(self):
         if self.board.is_open:

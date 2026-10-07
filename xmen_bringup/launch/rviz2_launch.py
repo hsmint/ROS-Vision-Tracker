@@ -32,6 +32,7 @@ def _robot(context):
         Node(package='xmen_tracker', executable='rviz_node',
              parameters=[clock, {
                  'pose_frame': roots[0],
+                 'preview_transport': LaunchConfiguration('preview_transport'),
                  'display_width': ParameterValue(LaunchConfiguration('display_width'), value_type=float),
                  'display_distance': ParameterValue(LaunchConfiguration('display_distance'), value_type=float),
              }], output='screen'),
@@ -54,6 +55,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_bag', default_value='false', choices=['true', 'false'],
                               description='Match the tracker playback clock.'),
+        DeclareLaunchArgument('preview_transport', default_value='compressed', choices=['compressed', 'raw'],
+                              description='Compressed Pi preview, or legacy raw RGB plus boxes.'),
         DeclareLaunchArgument('start_rviz', default_value='true', choices=['true', 'false'],
                               description='Open RViz2 as well as the overlay node.'),
         DeclareLaunchArgument('rviz_config', default_value=str(description_share / 'rviz/tracking.rviz')),

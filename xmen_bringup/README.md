@@ -4,7 +4,7 @@ ROS 2 Lyrical launches for the current `xmen_vision` and `xmen_tracker` nodes.
 
 | Machine | Launch | Nodes |
 |---|---|---|
-| Raspberry Pi | `hardware_launch.py` | RealSense camera + tracker + xmen_control/control |
+| Raspberry Pi | `hardware_launch.py` | RealSense camera + tracker + JPEG preview + xmen_control/control |
 | Remote PC | `rviz2_launch.py` | Overlay/marker node + RViz2 |
 
 The tracker publishes `/target`, `/tracking/bbox`, `/perception_status`, and
@@ -20,7 +20,7 @@ On each machine, from the ROS workspace:
 source /opt/ros/lyrical/setup.bash
 colcon build --symlink-install --packages-up-to xmen_bringup
 source install/setup.bash
-export ROS_DOMAIN_ID=42
+export ROS_DOMAIN_ID=50
 ```
 
 Use the same domain on both machines, allow DDS discovery/data traffic across
@@ -32,6 +32,46 @@ On the Pi:
 ```bash
 ros2 launch xmen_bringup hardware_launch.py
 ```
+
+The default camera capture is 30 FPS at 640×360 color and 640×360 native depth.
+Depth is aligned to color, and image publication targets 30 Hz. Detection processes the newest synchronized pair at 20 Hz, dropping superseded
+pairs before image conversion. Commands keep their independent 20 Hz timer.
+Measured joint feedback from `control` remains 2 Hz. Override image processing
+with `image_hz:=15.0` for lower CPU load (maximum 30). Camera publication targets 30 Hz; detection and commands target 20 Hz each.
+Actual timing depends on CPU load and image delivery.
+Local tracking keeps reliable raw RGB/depth delivery on the Pi. A separate
+`preview_node` pairs the tracker boxes with their original color frames, draws
+the selected target, and sends `/tracking/preview/compressed` as best-effort JPEG
+at up to **5 Hz, quality 70**. The PC decodes it into the existing RViz image and
+image-plane topics. Its default subscriptions do not request raw RGB or depth.
+Preview encoding runs in a separate process and only when a preview subscriber
+is connected. It still consumes some Pi CPU; it does not change detection or
+command rates. JPEG size depends on the scene.
+
+Adjust preview traffic independently of tracking:
+
+```bash
+# Pi: 15 Hz local tracking, 5 Hz annotated remote preview
+ros2 launch xmen_bringup hardware_launch.py image_hz:=15.0 preview_hz:=5.0 jpeg_quality:=70
+# Use preview_hz:=2.0 jpeg_quality:=50 for a lighter preview.
+# Use start_preview:=false to disable the preview process entirely.
+```
+
+Deploy and rebuild `xmen_tracker` and `xmen_bringup` on both machines before
+restarting the launches. The camera and tracker algorithms are unchanged by
+this preview transport. Bag mode starts the same preview node using simulated
+time. For an older Pi without the preview publisher, explicitly use
+`preview_transport:=raw` on the PC (this sends full raw RGB over the network).
+
+Measure actual receiving rates on the Pi while the launch is running:
+
+```bash
+ros2 topic hz /camera/color/image_raw /camera/aligned_depth_to_color/image_raw /target /cmd_vel --qos-reliability best_effort --window 100
+```
+
+Expect up to 30 Hz images and approximately 20 Hz targets and commands (an immediate stop
+command is also sent when a target is lost). Rates depend on scene load,
+camera delivery and dropped frames; these are configured limits, not guarantees.
 
 On the remote PC:
 
@@ -84,6 +124,29 @@ rosdep install --from-paths src --ignore-src -r -y
 
 Tracker tuning is in `param/tracker.yaml`; an alternate file can be supplied
 with `params_file:=/absolute/path/tracker.yaml`.
+
+### Check what the Pi is doing
+
+Use domain 50 on both machines (`export ROS_DOMAIN_ID=50`). The PC's saved
+RViz configuration displays the annotated image, image plane, and target marker.
+The green box is drawn from the Pi's same-frame detection; an empty detection
+produces an image without a box. Images retain the original capture header.
+
+```bash
+# On the PC: these checks do not subscribe to raw camera images.
+ros2 topic hz /tracking/preview/compressed --qos-reliability best_effort
+ros2 topic echo /perception_status
+ros2 topic echo /target --qos-reliability best_effort
+```
+
+`/perception_status` reports `OK`, `NO_TARGET`, or `CAMERA_STALL` on changes and
+once per second while the tracker is running. If the tracker stops, that
+heartbeat also stops. RViz may retain its last picture when input stops: use
+the heartbeat and incoming preview rate to distinguish live tracking from a
+frozen display. Preview frames are published only for matching image/detection
+pairs; no stale frame is repeatedly sent. Target markers remain independent of
+preview delivery. Avoid raw image viewers or remote raw-topic rate checks when
+measuring network savings, since they request the full stream again.
 
 ## Record color and depth
 

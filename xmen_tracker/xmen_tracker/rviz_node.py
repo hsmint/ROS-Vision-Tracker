@@ -2,6 +2,9 @@
 
 import math
 
+import cv2
+import numpy as np
+
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import PointStamped, PolygonStamped, PoseStamped, TransformStamped
 from message_filters import Subscriber, TimeSynchronizer
@@ -10,13 +13,13 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image, PointCloud2
+from sensor_msgs.msg import CompressedImage, Image, PointCloud2
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros import Buffer, TransformListener, TransformException
 from visualization_msgs.msg import Marker
 
 from xmen_tracker.markers import target_marker
-from xmen_tracker.overlay import annotate_target, image_plane
+from xmen_tracker.overlay import annotate_target, image_plane, matched_bbox
 
 
 class RvizNode(Node):
@@ -47,18 +50,23 @@ class RvizNode(Node):
             PointStamped, '/target', self.on_target,
             QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT),
         )
-        self.color_subscriber = Subscriber(
-            self, Image, 'camera/color/image_raw', qos_profile=reliable
-        )
-        self.bbox_subscriber = Subscriber(
-            self, PolygonStamped, '/tracking/bbox', qos_profile=reliable
-        )
-        # Never draw a delayed detection over a newer image. Allow network jitter
-        # with a bounded queue; missing pairs are dropped instead of reused.
-        self.synchronizer = TimeSynchronizer(
-            [self.color_subscriber, self.bbox_subscriber], queue_size=30
-        )
-        self.synchronizer.registerCallback(self.on_image)
+        transport = self.declare_parameter(
+            'preview_transport', 'compressed', ParameterDescriptor(read_only=True)).value
+        if transport == 'compressed':
+            self.preview_subscriber = self.create_subscription(
+                CompressedImage, '/tracking/preview/compressed', self.on_preview,
+                QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
+        elif transport == 'raw':
+            self.color_subscriber = Subscriber(
+                self, Image, 'camera/color/image_raw',
+                qos_profile=QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT))
+            self.bbox_subscriber = Subscriber(
+                self, PolygonStamped, '/tracking/bbox', qos_profile=reliable)
+            self.synchronizer = TimeSynchronizer(
+                [self.color_subscriber, self.bbox_subscriber], queue_size=30)
+            self.synchronizer.registerCallback(self.on_image)
+        else:
+            raise ValueError('preview_transport must be compressed or raw')
         self.marker_tf = StaticTransformBroadcaster(self)
         transform = TransformStamped()
         transform.header.stamp = self.get_clock().now().to_msg()
@@ -101,41 +109,43 @@ class RvizNode(Node):
         marker.scale.x = marker.scale.y = marker.scale.z = self.display_width * 0.04
         self.marker_publisher.publish(marker)
 
-    def on_image(self, image_msg, box_msg):
-        """Draw a same-frame bounding box; an empty polygon means no target."""
-        if image_msg.width == 0 or image_msg.height == 0:
+    def on_preview(self, message):
+        """Decode a Pi-annotated frame without requiring another network topic."""
+        if not self.wants_preview():
             return
-        self.image_aspect = image_msg.height / image_msg.width
-        want_image = self.annotated_publisher.get_subscription_count() > 0
-        want_plane = self.image_plane_publisher.get_subscription_count() > 0
-        if not (want_image or want_plane):
-            return
-        if image_msg.header.frame_id != box_msg.header.frame_id:
-            return
-        points = box_msg.polygon.points
-        if len(points) not in (0, 2):
-            return
-        bbox = None
-        if points:
-            left, right = points
-            if not (0 <= left.x <= right.x < image_msg.width
-                    and 0 <= left.y <= right.y < image_msg.height):
-                return
-            bbox = (round(left.x), round(left.y),
-                    round(right.x - left.x + 1), round(right.y - left.y + 1))
         try:
-            rgb = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='rgb8')
-            overlay = annotate_target(rgb, bbox)
-        except (CvBridgeError, ValueError) as error:
-            self.get_logger().error(f'Cannot draw RViz image: {error}', throttle_duration_sec=5.0)
+            bgr = cv2.imdecode(np.frombuffer(message.data, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if bgr is None:
+                raise ValueError('Invalid JPEG preview')
+            self.publish_overlay(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), message.header)
+        except (ValueError, cv2.error, CvBridgeError) as error:
+            self.get_logger().warning(f'Cannot decode preview: {error}', throttle_duration_sec=5.0)
+
+    def wants_preview(self):
+        return (self.annotated_publisher.get_subscription_count() > 0
+                or self.image_plane_publisher.get_subscription_count() > 0)
+
+    def on_image(self, image_msg, box_msg):
+        """Optional raw transport for older publishers or direct bag playback."""
+        if not self.wants_preview():
             return
-        if want_image:
+        try:
+            bbox = matched_bbox(image_msg, box_msg)
+            rgb = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='rgb8')
+            self.publish_overlay(annotate_target(rgb, bbox), image_msg.header)
+        except (CvBridgeError, ValueError, cv2.error) as error:
+            self.get_logger().error(f'Cannot draw RViz image: {error}', throttle_duration_sec=5.0)
+
+    def publish_overlay(self, overlay, header):
+        self.image_aspect = overlay.shape[0] / overlay.shape[1]
+        if self.annotated_publisher.get_subscription_count() > 0:
             annotated = self.bridge.cv2_to_imgmsg(overlay, encoding='rgb8')
-            annotated.header = image_msg.header
+            annotated.header = header
             self.annotated_publisher.publish(annotated)
-        if want_plane:
-            self.image_plane_publisher.publish(image_plane(overlay, image_msg.header.stamp,
-                            display_width=self.display_width, distance=self.display_distance))
+        if self.image_plane_publisher.get_subscription_count() > 0:
+            self.image_plane_publisher.publish(image_plane(
+                overlay, header.stamp, display_width=self.display_width,
+                distance=self.display_distance))
 
 
 def main(args=None):

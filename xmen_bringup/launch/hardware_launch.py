@@ -25,6 +25,13 @@ def _setup(context):
         package='xmen_tracker', executable='tracker_node', output='screen',
         parameters=[LaunchConfiguration('params_file'), {'use_sim_time': use_bag}],
     )]
+    actions.append(Node(
+        package='xmen_tracker', executable='preview_node', output='screen',
+        condition=IfCondition(LaunchConfiguration('start_preview')),
+        parameters=[{'use_sim_time': use_bag,
+                     'preview_hz': ParameterValue(LaunchConfiguration('preview_hz'), value_type=float),
+                     'jpeg_quality': ParameterValue(LaunchConfiguration('jpeg_quality'), value_type=int)}],
+    ))
     if not use_bag:
         if start_control:
             actions.append(Node(
@@ -37,7 +44,9 @@ def _setup(context):
             ))
         actions.append(Node(
             package='xmen_vision', executable='realsense_node', output='screen',
-            parameters=[{'use_sim_time': False}],
+            parameters=[{'use_sim_time': False,
+                         'publish_hz': ParameterValue(
+                             LaunchConfiguration('image_hz'), value_type=float)}],
         ))
     elif bag_path:
         # Replay only sensor inputs: old commands/detections must not compete
@@ -68,5 +77,13 @@ def generate_launch_description():
                               description='Home on control startup and save firmware automatic homing setting.'),
         DeclareLaunchArgument('control_params_file', default_value=str(share / 'param/control.yaml')),
         DeclareLaunchArgument('port', default_value='/dev/ttyACM0'),
+        DeclareLaunchArgument('image_hz', default_value='30.0',
+                              description='Image alignment/publication rate, up to 30 Hz.'),
+        DeclareLaunchArgument('start_preview', default_value='true', choices=['true', 'false'],
+                              description='Publish a separate annotated JPEG preview.'),
+        DeclareLaunchArgument('preview_hz', default_value='5.0',
+                              description='Remote preview rate; independent of image_hz and tracking.'),
+        DeclareLaunchArgument('jpeg_quality', default_value='70',
+                              description='JPEG preview quality, 1 to 100.'),
         OpaqueFunction(function=_setup),
     ])

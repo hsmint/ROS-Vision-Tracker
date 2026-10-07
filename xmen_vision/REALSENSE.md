@@ -19,7 +19,8 @@ ros2 run xmen_vision realsense_node
 ```
 
 Topics (`sensor_msgs/msg/Image`, reliable QoS with a queue depth of 5).
-Both reliable and best-effort subscribers are supported:
+The local tracker requests reliable delivery to preserve RGB/depth pairs; remote
+visualization requests best-effort delivery to avoid image retransmissions:
 
 | Topic | Encoding | Data |
 | --- | --- | --- |
@@ -31,13 +32,18 @@ pair shares a ROS receipt timestamp and `camera_color_optical_frame` frame ID
 (x right, y down, z forward). The node does not publish TF or camera calibration.
 Topic names are relative and support ROS namespaces and remapping.
 
-Startup parameters: `width` (640), `height` (480), `fps` (30),
+Startup parameters: `width` (640), `height` (360), `depth_width` (640), `depth_height` (360),
+`fps` (30), `publish_hz` (30.0),
 `serial_number` (empty selects an available camera), and `frame_id`
 (`camera_color_optical_frame`). Parameters are read-only after startup.
-Both streams must support the selected resolution and frame rate.
+Each stream must support its selected resolution and the shared frame rate.
+Depth is aligned to color, so both published images are 640×360 by default.
+`publish_hz` must be positive and no greater than `fps`. Capture stays at `fps`;
+only the latest frames are aligned and published at up to `publish_hz`, reducing
+CPU use and raw image traffic. Set `publish_hz:=15.0` to reduce processing load.
 
 ```bash
-ros2 run xmen_vision realsense_node --ros-args -p width:=640 -p height:=480 -p fps:=30
+ros2 run xmen_vision realsense_node --ros-args -p width:=640 -p height:=360 -p depth_width:=640 -p depth_height:=360 -p fps:=30 -p publish_hz:=30.0
 ros2 topic hz /camera/color/image_raw --qos-reliability best_effort
 ros2 topic hz /camera/aligned_depth_to_color/image_raw --qos-reliability best_effort
 ```

@@ -1,5 +1,6 @@
 """Publish RealSense color and aligned depth images."""
 
+import math
 import numpy as np
 import rclpy
 from rcl_interfaces.msg import ParameterDescriptor
@@ -39,7 +40,10 @@ class RealSenseNode(Node):
         defaults = {
             'width': 640,
             'height': 360,
+            'depth_width': 640,
+            'depth_height': 360,
             'fps': 30,
+            'publish_hz': 30.0,
             'serial_number': '',
             'frame_id': 'camera_color_optical_frame',
         }
@@ -50,9 +54,11 @@ class RealSenseNode(Node):
         
         values = {name: self.get_parameter(name).value for name in defaults}
 
-        for name in ('width', 'height', 'fps'):
+        for name in ('width', 'height', 'depth_width', 'depth_height', 'fps'):
             if values[name] <= 0:
                 raise ValueError(f'{name} must be positive')
+        if not math.isfinite(values['publish_hz']) or not 0 < values['publish_hz'] <= values['fps']:
+            raise ValueError('publish_hz must be positive and no greater than fps')
         
         self.frame_id = values['frame_id']
         
@@ -68,12 +74,12 @@ class RealSenseNode(Node):
         config = rs.config()
         if values['serial_number']:
             config.enable_device(values['serial_number'])
-        for stream, pixel_format in (
-            (rs.stream.color, rs.format.rgb8),
-            (rs.stream.depth, rs.format.z16),
+        for stream, pixel_format, width, height in (
+            (rs.stream.color, rs.format.rgb8, values['width'], values['height']),
+            (rs.stream.depth, rs.format.z16, values['depth_width'], values['depth_height']),
         ):
             config.enable_stream(
-                stream, values['width'], values['height'], pixel_format, values['fps']
+                stream, width, height, pixel_format, values['fps']
             )
 
         pipeline = rs.pipeline()
@@ -81,10 +87,14 @@ class RealSenseNode(Node):
         self.pipeline = pipeline
         self.depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
         self.align = rs.align(rs.stream.color)
-        self.timer = self.create_timer(1.0 / values['fps'], self.publish_frames)
+        # poll_for_frames returns the latest available frames; frames between
+        # polls are dropped before costly alignment, conversion and ROS copies.
+        self.timer = self.create_timer(1.0 / values['publish_hz'], self.publish_frames)
 
         self.get_logger().info(
-            f"Streaming {values['width']}x{values['height']} at {values['fps']} FPS; "
+            f"Capturing {values['width']}x{values['height']} at {values['fps']} FPS; "
+            f"native depth {values['depth_width']}x{values['depth_height']}; "
+            f"publishing up to {values['publish_hz']:g} Hz; "
             'aligned depth uses 32FC1 in meters.'
         )
 
@@ -106,7 +116,7 @@ class RealSenseNode(Node):
             depth_array *= self.depth_scale
             depth_array[raw_depth == 0] = np.nan
             self.color_publisher.publish(
-                image_message(color_array, 'rgb8', stamp, self.frame_id)
+                image_message(color_array, 'bgr8', stamp, self.frame_id)
             )
             self.depth_publisher.publish(
                 image_message(depth_array, '32FC1', stamp, self.frame_id)
