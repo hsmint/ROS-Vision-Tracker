@@ -92,7 +92,7 @@ not infer joint positions from `/cmd_vel`.
 
 The flat tracking image plane is centered 0.25 m in front of `camera_link`
 and follows the camera's pan/tilt chain. `camera_link` is attached to the CAD
-camera housing (`part_3`) at its nominal front center, with X forward, Y left,
+camera housing (`part_3`) at its +Y face (y=0.0205 m), with X forward, Y left,
 and Z up. `camera_color_optical_frame` has Z forward, X right, and Y down.
 The mount is a CAD-based approximation, not calibrated lens extrinsics.
 
@@ -228,7 +228,12 @@ ros2 launch xmen_bringup hardware_launch.py start_control:=false
 ```
 
 `control_lite` opens the port at 115200 baud and automatically homes tilt, then
-pan, once at startup before accepting `/cmd_vel`. It has no `auto_home` option;
+pan at startup before accepting `/cmd_vel`. Each axis approaches within
+4 ticks, then settles within the 8-tick acceptance band for 0.2 seconds.
+If an axis drifts outside the
+8-tick home tolerance while the other homes, it retries the sequence up to
+three total attempts, then stops with both axis positions in the error log.
+It has no `auto_home` option;
 that launch argument has been removed. Stop any separately running controller
 before launching bringup so only one process owns the serial port.
 
@@ -237,3 +242,9 @@ tilt. `/joint_states` reports measured `pan` and `tilt` positions, targeting
 100 Hz. Zero velocity stops motion, and commands expire after 0.2 seconds.
 The lite node does not provide `/status`, `/opencr/home`, or `/opencr/stop`;
 fault diagnostics are written to its ROS log.
+
+The target marker is a live camera-relative indicator: it uses the latest TF and
+is frame-locked to `tracking_image`, so pan/tilt motion carries it with the
+image plane. It does not request a historical transform at the Pi timestamp.
+The JPEG bounding box remains the exact same-frame detection; the independent
+marker can be newer than the 5 Hz preview. Invalid targets delete the marker.

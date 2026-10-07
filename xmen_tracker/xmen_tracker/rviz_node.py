@@ -28,7 +28,7 @@ class RvizNode(Node):
     def __init__(self):
         super().__init__('rviz_node')
         self.bridge = CvBridge()
-        self.image_aspect = 1.0
+        self.image_aspect = 360 / 640
         self.marker_lifetime = self.declare_parameter(
             'marker_lifetime', 0.5, ParameterDescriptor(read_only=True)
         ).value
@@ -104,8 +104,9 @@ class RvizNode(Node):
         marker = target_marker(target, self.marker_lifetime)
         # Match the upright image screen; sit slightly toward the viewer.
         marker.pose.position.x = self.display_distance - 0.005
-        marker.pose.position.y = -target.point.x * self.display_width / 2
-        marker.pose.position.z = -target.point.y * self.image_aspect * self.display_width / 2
+        if marker.action == Marker.ADD:
+            marker.pose.position.y = -target.point.x * self.display_width / 2
+            marker.pose.position.z = -target.point.y * self.image_aspect * self.display_width / 2
         marker.scale.x = marker.scale.y = marker.scale.z = self.display_width * 0.04
         self.marker_publisher.publish(marker)
 

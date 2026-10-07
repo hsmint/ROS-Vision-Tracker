@@ -9,9 +9,12 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import JointState
 
 PERIOD, TIMEOUT = 0.01, 0.2
+WRITE_TIMEOUT = 0.1  # allow USB scheduling jitter; firmware watchdog stays 0.2s
 MAX_SPEED, HOME_SPEED, HOME_TIMEOUT = 1.0, 0.3, 30.0
 TICK_RAD = 2 * math.pi / 4096
 HOME_TOLERANCE, SETTLE_TIME = 8 * TICK_RAD, 0.2
+HOME_APPROACH_TOLERANCE = 4 * TICK_RAD
+HOME_ATTEMPTS = 3
 POSITION_LIMITS = ((-2048, 2048), (-1365, 1365))  # pan +/-180, tilt +/-120 deg
 POSITION_TOLERANCE = 8  # match the firmware feedback tolerance
 
@@ -21,7 +24,7 @@ class OpenCRBridge(Node):
         super().__init__('control_lite')
         port = self.declare_parameter('port', '/dev/ttyACM0').value
         self.board = serial.Serial(
-            port, 115200, timeout=0, write_timeout=0.02, exclusive=True)
+            port, 115200, timeout=0, write_timeout=WRITE_TIMEOUT, exclusive=True)
         self.board.reset_input_buffer()
         self.start_at = self.sample_at = time.monotonic() + 1.5
         self.sample = self.position = self.pending = None
@@ -34,7 +37,13 @@ class OpenCRBridge(Node):
 
     def send(self, text):
         data = (text + '\n').encode('ascii')
-        if self.board.write(data) != len(data):
+        try:
+            written = self.board.write(data)
+        except serial.SerialTimeoutException as error:
+            raise OSError(
+                f'USB write timed out after {WRITE_TIMEOUT:.2f}s '
+                f'(command={text!r})') from error
+        if written != len(data):
             raise OSError('Incomplete serial write')
 
     def write_speed(self, msg):
@@ -54,7 +63,10 @@ class OpenCRBridge(Node):
                 f'register={register}, value={value}, '
                 f'library_error={library}, status_error={status}')
         if len(fields) != 5 or fields[0] != b'P1':
-            raise ValueError('Unexpected firmware reply')
+            raise ValueError(
+                f'Unexpected firmware reply: {line[:160]!r}; '
+                'expected P1 SAMPLE PAN_TICKS TILT_TICKS FAULT from '
+                'opencr_lite.ino. Full control firmware is incompatible')
         sample, pan, tilt, fault = map(int, fields[1:])
         details = f'sample={sample}, pan={pan}, tilt={tilt}, fault={fault}'
         if fault:
@@ -81,15 +93,52 @@ class OpenCRBridge(Node):
         self.positions.publish(msg)
 
     def home(self):
+        for attempt in range(1, HOME_ATTEMPTS + 1):
+            yield from self.home_axes()
+            if all(abs(p) <= HOME_TOLERANCE for p in self.position):
+                self.get_logger().info('Home reached; Twist enabled')
+                return
+            details = ', '.join(
+                f'{name}={position / TICK_RAD:.0f} ticks'
+                for name, position in zip(('pan', 'tilt'), self.position))
+            if attempt == HOME_ATTEMPTS:
+                raise ValueError(
+                    f'An axis moved away from home after {attempt} attempts '
+                    f'({details}; tolerance=8 ticks)')
+            self.get_logger().warning(
+                f'Home drift detected ({details}); '
+                f'retrying homing ({attempt + 1}/{HOME_ATTEMPTS})')
+
+    def home_axes(self):
         for axis in (1, 0):  # tilt, then pan
             self.send('x')
-            deadline = time.monotonic() + HOME_TIMEOUT
+            name = ('pan', 'tilt')[axis]
+            started = next_log = time.monotonic()
+            deadline = started + HOME_TIMEOUT
+            initial = closest = self.position[axis]
+            last_speed = 0.0
             settled = previous = None
             while True:
                 now, position = time.monotonic(), self.position[axis]
-                if now >= deadline: raise ValueError('Homing timed out')
+                if abs(position) < abs(closest): closest = position
+                if now >= deadline:
+                    raise ValueError(
+                        f'Homing timed out: axis={name}, '
+                        f'elapsed={now - started:.1f}s, '
+                        f'start={initial / TICK_RAD:.0f} ticks, '
+                        f'position={position / TICK_RAD:.0f} ticks, '
+                        f'closest={closest / TICK_RAD:.0f} ticks, '
+                        f'last_command={last_speed:.6f} rad/s, '
+                        f'pan={self.position[0] / TICK_RAD:.0f} ticks, '
+                        f'tilt={self.position[1] / TICK_RAD:.0f} ticks; '
+                        'required: approach within 4 ticks, then stay '
+                        'within 8 ticks and settle for 0.2s')
                 speed = [0.0, 0.0]
-                if abs(position) > HOME_TOLERANCE:
+                # Stop inside the acceptance band, leaving room for feedback
+                # jitter. Once stopped, use the wider band to avoid chatter.
+                tolerance = (HOME_APPROACH_TOLERANCE if settled is None
+                             else HOME_TOLERANCE)
+                if abs(position) > tolerance:
                     settled = None
                     rate = min(HOME_SPEED, max(0.03, abs(position)))
                     speed[axis] = math.copysign(rate, -position)
@@ -99,12 +148,16 @@ class OpenCRBridge(Node):
                         settled = now
                     if now - settled >= SETTLE_TIME: break
                 self.send(f'v {speed[0]:.6f} {speed[1]:.6f}')
+                last_speed = speed[axis]
+                if now >= next_log:
+                    self.get_logger().info(
+                        f'Homing {name}: elapsed={now - started:.1f}s, '
+                        f'position={position / TICK_RAD:.0f} ticks, '
+                        f'command={last_speed:.6f} rad/s')
+                    next_log = now + 2.0
                 previous = position
                 yield True  # wait for another measured position
             self.send('x')
-        if any(abs(p) > HOME_TOLERANCE for p in self.position):
-            raise ValueError('An axis moved away from home')
-        self.get_logger().info('Home reached; Twist enabled')
 
     def tick(self):
         if time.monotonic() < self.start_at: return
