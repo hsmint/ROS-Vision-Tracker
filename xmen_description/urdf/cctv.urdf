@@ -531,13 +531,13 @@
         <child link="fr12_s102k" />
         <limit effort="1" velocity="1" lower="0" upper="6.28319" />
     </joint>
-    <!-- CAD camera front: -Y of part_3, width along X, up along Z.
+    <!-- CAD camera front: +Y of part_3, width along X, up along Z.
          Nominal front-center pose; lens extrinsics require calibration. -->
     <link name="camera_link" />
     <joint name="camera_mount_joint" type="fixed">
         <parent link="part_3" />
         <child link="camera_link" />
-        <origin xyz="0 -0.0045 0" rpy="0 0 -1.5707963267948966" />
+        <origin xyz="0 0.0205 0" rpy="0 0 1.5707963267948966" />
     </joint>
     <link name="camera_color_optical_frame" />
     <joint name="camera_optical_joint" type="fixed">

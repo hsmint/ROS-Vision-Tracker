@@ -24,18 +24,23 @@ visualization requests best-effort delivery to avoid image retransmissions:
 
 | Topic | Encoding | Data |
 | --- | --- | --- |
-| `/camera/color/image_raw` | `rgb8` | RGB color |
+| `/camera/color/image_raw` | `bgr8` | BGR color |
+| `/camera/color/camera_info` | — | Color intrinsics (`sensor_msgs/CameraInfo`, transient local, published once) |
 | `/camera/aligned_depth_to_color/image_raw` | `32FC1` | Depth in meters; invalid pixels are NaN |
 
 Depth is aligned to color so the two images have corresponding pixels. Each
 pair shares a ROS receipt timestamp and `camera_color_optical_frame` frame ID
-(x right, y down, z forward). The node does not publish TF or camera calibration.
+(x right, y down, z forward). The node publishes color intrinsics on
+`camera/color/camera_info` (aligned depth uses the same pixels) but no TF.
 Topic names are relative and support ROS namespaces and remapping.
 
 Startup parameters: `width` (640), `height` (360), `depth_width` (640), `depth_height` (360),
 `fps` (30), `publish_hz` (30.0),
-`serial_number` (empty selects an available camera), and `frame_id`
-(`camera_color_optical_frame`). Parameters are read-only after startup.
+`serial_number` (empty selects an available camera), `frame_id`
+(`camera_color_optical_frame`), and color sensor options matching the conditions used to
+tune detection: `white_balance` (4600.0 K fixed; ≤ 0 = auto), `exposure` (0.0 = auto),
+`auto_exposure_priority` (1.0), `backlight_compensation` (0.0).
+Parameters are read-only after startup.
 Each stream must support its selected resolution and the shared frame rate.
 Depth is aligned to color, so both published images are 640×360 by default.
 `publish_hz` must be positive and no greater than `fps`. Capture stays at `fps`;

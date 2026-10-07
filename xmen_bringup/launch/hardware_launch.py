@@ -23,7 +23,10 @@ def _setup(context):
 
     actions = [Node(
         package='xmen_tracker', executable='tracker_node', output='screen',
-        parameters=[LaunchConfiguration('params_file'), {'use_sim_time': use_bag}],
+        parameters=[LaunchConfiguration('params_file'), {
+            'use_sim_time': use_bag,
+            'detector_config': LaunchConfiguration('detector_config'),
+        }],
     )]
     actions.append(Node(
         package='xmen_tracker', executable='preview_node', output='screen',
@@ -70,6 +73,8 @@ def generate_launch_description():
                               description='Bag to play, or empty for externally started playback.'),
         DeclareLaunchArgument('params_file', default_value=str(share / 'param/tracker.yaml'),
                               description='Tracker ROS parameter YAML.'),
+        DeclareLaunchArgument('detector_config', default_value=str(share / 'param/detector.yaml'),
+                              description='Cube detection YAML (HSV, size, shape, depth, partial view).'),
         DeclareLaunchArgument('start_control', default_value='true', choices=['true', 'false'],
                               description='Start xmen_control/control_lite in live mode (homes once at startup).'),
         DeclareLaunchArgument('control_params_file', default_value=str(share / 'param/control.yaml')),
