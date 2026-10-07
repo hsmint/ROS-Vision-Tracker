@@ -48,6 +48,7 @@ target_detector ──/target──▶ tracking_controller ──/cmd_vel──�
 | `/perception_status` | `std_msgs/String` | target_detector | (모니터링) | reliable, keep_last 1 | 상태 변화 시 + 1 Hz |
 | `/cmd_vel` | `geometry_msgs/Twist` | tracking_controller | motor_driver | reliable, keep_last 1 | 20 Hz 고정 |
 | `/tracking_status` | `std_msgs/String` | tracking_controller | (모니터링·기록) | reliable, keep_last 1 | 20 Hz |
+| `/joint_states` | `sensor_msgs/JointState` | motor_driver | (모니터링·기록·RViz) | reliable, keep_last 1 | OpenCR이 각도를 보낼 때마다. 받지 못하면 발행 안 함 |
 
 ### `/target` 필드
 
@@ -147,10 +148,13 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | 구분 | 내용 |
 |---|---|
 | 수신 | `/cmd_vel` |
-| 송신 | 없음 (하드웨어 출력 지점. 현재 `output_enabled: false` → 로그만) |
-| 동작 | 축별 상한(`hw_max_speed`, `hw_max_speed_tilt`)으로 다시 제한 → 값이 바뀔 때 로그 `[OFF] pan=… tilt=… rad/s` |
-| 정지 판단 | 0.2 s 명령 없음 → 두 축 0 (`명령 끊김(watchdog)`) |
-| 미구현 | OpenCR 시리얼 전송, 현재 각도(`/joint_states`) 발행 |
+| 송신 | `/joint_states` (현재 각도), OpenCR 시리얼(`port` /dev/ttyACM0, 115200) — 시리얼은 `output_enabled: true`일 때만, 기본 false면 보낼 값만 로그 |
+| 동작 | 축별 상한(`hw_max_speed`, `hw_max_speed_tilt`)으로 다시 제한 → 각속도를 °/s로 바꿔 그대로 전송(적분·변환 없음) |
+| 시리얼 형식 | `"V <팬> <틸트>\n"` — 팬·틸트 각속도 [deg/s] = `angular.z`·`angular.y` [rad/s] × 57.3 × 부호(`sign_pan`, `sign_tilt`). 명령마다(20 Hz) 한 줄. 형식은 제어 담당 펌웨어와 맞춘다 |
+| 정지 판단 | 0.2 s 명령 없음 → `V 0.00 0.00`을 20 Hz로 계속 전송 (`명령 끊김(watchdog)`). 노드 종료 시에도 0 전송 |
+| OpenCR 수신 | `"P <팬> <틸트>\n"` 현재 각도 [deg, 원점 기준] → × 부호로 `/cmd_vel` 기준(팬 + 왼쪽, 틸트 + 아래) → `/joint_states` 발행(rad, `pan_joint`·`tilt_joint`). 그 밖의 줄은 `[OpenCR] …` 로그 |
+| 회전 범위 | 현재 각도가 `pan_limit_deg`·`tilt_limit_deg` 끝 이상이면 바깥 방향 속도 0(안쪽은 허용). 각도가 `position_timeout`(0.5 s) 동안 없으면 범위 확인 불가 → `require_position: true`면 두 축 0, false면 경고 후 전송 |
+| 미확인 | OpenCR 펌웨어가 `P` 줄을 보내야 동작(제어 담당). 범위 값은 임시 — 실제 기구로 정하고 펌웨어와 맞춤. 실제 모터로 `sign_*` 확인 |
 
 ### 보조·검증 노드 (xmen_bringup/target_bringup, 모터 출력 OFF)
 
@@ -160,7 +164,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 | `input_test` | `/cmd_vel`, `/tracking_status` | `/target` (모의) | 모의 입력 11단계 → PASS/FAIL, CSV |
 | `gimbal_sim` | `/cmd_vel` | `/target` (모의) | 명령을 적분한 가상 짐벌로 부호 시험 |
 | `search_test` | `/cmd_vel`, `/tracking_status` | `/target` (모의), `/search` 요청 | 액션 5가지 경우 |
-| `interface_check` | 위 토픽 4개 전부 | 없음 | 타입·QoS·주기·호환성 검사 + 기록 |
+| `interface_check` | 위 토픽 5개 전부 | 없음 | 타입·QoS·주기·호환성 검사 + 기록 |
 
 주의: 시험 노드는 `/target`을 **모의로 발행**한다. detector와 동시에 띄우면 값이 섞인다 —
 같이 켜야 하면 `export ROS_DOMAIN_ID=<다른 번호>`로 분리한다.
