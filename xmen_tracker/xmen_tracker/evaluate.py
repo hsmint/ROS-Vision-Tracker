@@ -7,8 +7,8 @@
 판정: 목표 프레임에서 검출 중심이 정답 상자(GT) 안이면 TP, 아니면 FN(엉뚱한 곳 검출은 wrong으로 따로 셈).
       목표 없는 프레임에서 검출되면 FP.
 
-  ros2 run target_perception evaluate --sim                                  # 패키지 config/detector.yaml
-  ros2 run target_perception evaluate --dataset <ws>/results/perception/dataset --config A.yaml B.yaml
+  ros2 run xmen_tracker evaluate --sim                                  # 패키지 config/detector.yaml
+  ros2 run xmen_tracker evaluate --dataset <cwd>/results/perception/dataset --config A.yaml B.yaml
 """
 import argparse
 import json
@@ -19,8 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from target_perception import detector
-from tracking_common import interface as I
+from xmen_tracker import detector
 
 BASE_FRAME = detector.package_path('data', 'sim_cube.png')             # 실제 D435 640×480(큐브를 손에 든 장면)
 NEG_FRAME = detector.package_path('data', 'sim_negative_shirt.png')    # 실제 D435 640×480(파란 줄무늬 셔츠, 큐브 없음)
@@ -136,7 +135,7 @@ def dataset_samples(root, use_depth=True):
                                 distance=meta.get('distance_m'), positive=meta['gt'] is not None,
                                 frame=frame, gt=meta['gt'], file=str(fp), depth=depth))
     if not samples:
-        raise SystemExit(f'{root}에 데이터가 없다. ros2 run target_perception tuning collect --camera 로 모은다.')
+        raise SystemExit(f'{root}에 데이터가 없다. ros2 run xmen_tracker tuning collect --camera 로 모은다.')
     return samples, dict(dataset=str(root), depth_frames=sum(s['depth'] is not None for s in samples))
 
 
@@ -282,8 +281,8 @@ def main():
     src.add_argument('--sim', action='store_true')
     src.add_argument('--dataset', type=Path)
     p.add_argument('--config', type=Path, nargs='+', default=[detector.DEFAULT_CONFIG])
-    p.add_argument('--out', type=Path, default=I.results_dir() / 'perception' / 'eval',
-                   help='결과 폴더(기본 <ws>/results/perception/eval)')
+    p.add_argument('--out', type=Path, default=(Path.cwd() / 'results') / 'perception' / 'eval',
+                   help='결과 폴더(기본 <cwd>/results/perception/eval)')
     p.add_argument('--seeds', type=int, default=6)
     p.add_argument('--ablation', action='store_true', help='마지막 --config에서 개선을 하나씩 뺀 변형도 평가')
     p.add_argument('--no-depth', action='store_true', help='--dataset: 저장된 뎁스를 쓰지 않고 색·모양만으로 평가')

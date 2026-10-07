@@ -51,24 +51,47 @@ and depth stay on the tracker computer by default. Tracking keeps running if
 the remote RViz node disconnects. Start the camera and worker separately;
 neither requires the RViz node to be running.
 
-Settings live in node parameter defaults, with no YAML configuration file.
-Tracker parameters are startup-only: `hsv_lower`, `hsv_upper`, `min_area`,
-`max_area_ratio`, `min_depth_m`, `max_depth_m`, `min_valid_depth_ratio`, and
-`stall_timeout`. Override them when running the tracker directly, for example:
+Perception settings live in `config/detector.yaml`, shared with the tuning and
+evaluation tools. The merged pipeline adds chroma, shape, physical-size,
+border/occlusion, and depth-splitting filters for the blue 30×30×60 mm target.
+The original tracker node, control timers, status, preview and RViz interfaces
+remain the runtime base. The duplicate `target_perception` package is retired.
+
+Select a configuration with the startup-only `config` parameter:
 
 ```bash
-ros2 run xmen_tracker tracker_node --ros-args -p max_depth_m:=2.0
+ros2 run xmen_tracker tracker_node --ros-args -p config:=/path/to/detector.yaml
+# Equivalent tracker-only launch (start the camera separately):
+ros2 launch xmen_tracker perception.launch.py config:=/path/to/detector.yaml
 ```
 
-HSV defaults come from `xmen_vision2/config/detector.yaml`. Area is measured at
-the input resolution. Candidates need valid depth; absent, invalid, or
-out-of-range depth rejects the candidate. There is no color-only fallback.
-Physical-size filtering requires camera intrinsics, which `xmen_vision` does
-not currently publish, so physical-size parameters are omitted.
+Existing startup parameters `hsv_lower`, `hsv_upper` (first HSV range),
+`min_area` (depth candidate pixel floor), `max_area_ratio`, `min_depth_m`,
+`max_depth_m`, and `min_valid_depth_ratio` override the selected configuration.
+Their defaults now come from that file. `stall_timeout` remains 0.5 seconds.
+Detection uses the entire input resolution, keeping bounding boxes and errors
+in the original camera coordinates. The largest accepted candidate wins;
+candidates within `selection.tie_ratio` are compared by proximity to image center.
 
-The largest valid color contour is selected each frame, with image-center
-proximity breaking equal-area ties. This does not maintain object identity
-between multiple blue objects. Tune HSV and depth bounds for your target.
+Tracking requires valid, in-range metric depth even if the offline configuration
+allows color-only fallback. Physical-size checks use `/camera/color/camera_info`
+when its dimensions and frame match the images, otherwise configured
+`camera.fx_px` at `camera.fx_width` is used for both focal lengths. The fallback
+must match the camera's field of view. `xmen_vision` now publishes calibration
+and correctly labels its native RGB images as `rgb8`.
+
+Tuning and evaluation are available in this package:
+
+```bash
+ros2 run xmen_tracker tuning tune --camera
+ros2 run xmen_tracker evaluate --sim --out /tmp/xmen-evaluation
+```
+
+Stop `realsense_node` before tools using `--camera`, which open the device
+directly. Camera exposure settings in detector YAML apply to these direct-camera
+tools, not to `realsense_node`. Offline tools retain optional depth and configured
+crop/resize behavior; their scores are not an end-to-end tracker benchmark.
+See [PERCEPTION.md](PERCEPTION.md) for data collection and filter tuning.
 
 Local tracking input subscriptions use reliable, volatile, keep-last QoS with depth 5
 and an exact-time synchronization queue of 5 pairs:

@@ -7,7 +7,7 @@ from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo, Image
 import pyrealsense2 as rs
 
 def image_message(array, encoding, stamp, frame_id):
@@ -71,6 +71,10 @@ class RealSenseNode(Node):
             Image, 'camera/aligned_depth_to_color/image_raw', image_qos
         )
 
+        self.info_publisher = self.create_publisher(
+            CameraInfo, 'camera/color/camera_info', image_qos
+        )
+
         config = rs.config()
         if values['serial_number']:
             config.enable_device(values['serial_number'])
@@ -115,8 +119,19 @@ class RealSenseNode(Node):
             depth_array = raw_depth.astype('<f4')
             depth_array *= self.depth_scale
             depth_array[raw_depth == 0] = np.nan
+            intr = color.profile.as_video_stream_profile().get_intrinsics()
+            info = CameraInfo()
+            info.header.stamp = stamp
+            info.header.frame_id = self.frame_id
+            info.width, info.height = intr.width, intr.height
+            info.distortion_model = 'plumb_bob'
+            info.d = list(intr.coeffs)
+            info.k = [intr.fx, 0.0, intr.ppx, 0.0, intr.fy, intr.ppy, 0.0, 0.0, 1.0]
+            info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
+            info.p = [intr.fx, 0.0, intr.ppx, 0.0, 0.0, intr.fy, intr.ppy, 0.0, 0.0, 0.0, 1.0, 0.0]
+            self.info_publisher.publish(info)
             self.color_publisher.publish(
-                image_message(color_array, 'bgr8', stamp, self.frame_id)
+                image_message(color_array, 'rgb8', stamp, self.frame_id)
             )
             self.depth_publisher.publish(
                 image_message(depth_array, '32FC1', stamp, self.frame_id)

@@ -16,12 +16,7 @@ tracker_node:
     deadband_tilt: 0.05
     max_speed_tilt: 0.6   # [rad/s] 중력이 걸리는 축이라 팬보다 낮게
 
-    # Detection uses aligned 32FC1 depth in meters.
-    hsv_lower: [103, 208, 26]
-    hsv_upper: [116, 255, 255]
-    min_area: 60.0
-    max_area_ratio: 0.6
-    min_depth_m: 0.1
-    max_depth_m: 1.2
-    min_valid_depth_ratio: 0.3
+    # Perception defaults come from xmen_tracker/config/detector.yaml.
+    # Set config to a custom detector YAML; existing HSV/depth parameters
+    # remain available as explicit overrides.
     stall_timeout: 0.5

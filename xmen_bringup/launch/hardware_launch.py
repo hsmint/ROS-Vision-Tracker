@@ -55,7 +55,7 @@ def _setup(context):
                  '--clock', '100', '--delay', '2',
                  '--qos-profile-overrides-path', str(share / 'param/bag_qos.yaml'),
                  '--topics', '/camera/color/image_raw',
-                 '/camera/aligned_depth_to_color/image_raw'],
+                 '/camera/aligned_depth_to_color/image_raw', '/camera/color/camera_info'],
             output='screen',
         ))
     return actions

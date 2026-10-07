@@ -10,10 +10,10 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image, JointState
+from sensor_msgs.msg import CameraInfo, Image, JointState
 from std_msgs.msg import String
 
-from xmen_tracker.detector import detect_target
+from xmen_tracker.detector import DEFAULT_CONFIG, TrackerDetector, load_config
 
 JOINT_LIMITS_DEG = {'pan': (-180.0, 180.0), 'tilt': (-120.0, 120.0)}
 # Match control_lite's eight encoder ticks of position tolerance.
@@ -37,11 +37,19 @@ class TrackerNode(Node):
         self.last_target = None
         self.last_rx = self.get_clock().now()
         self.status = 'CAMERA_STALL'
+        config_path = self.declare_parameter(
+            'config', str(DEFAULT_CONFIG), ParameterDescriptor(read_only=True)
+        ).value
+        cfg = load_config(config_path)
+        hsv = cfg['target']['hsv_ranges'][0]
+        self.camera_info = None
         defaults = {
-            'hsv_lower': [103, 208, 26], 'hsv_upper': [116, 255, 255],
-            'min_area': 60.0, 'max_area_ratio': 0.6,
-            'min_depth_m': 0.1, 'max_depth_m': 1.2,
-            'min_valid_depth_ratio': 0.3, 'stall_timeout': 0.5,
+            'hsv_lower': hsv['lower'], 'hsv_upper': hsv['upper'],
+            'min_area': float(cfg['depth']['min_area_px']),
+            'max_area_ratio': float(cfg['selection']['max_area_ratio']),
+            'min_depth_m': float(cfg['depth']['min_m']),
+            'max_depth_m': float(cfg['depth']['max_m']),
+            'min_valid_depth_ratio': float(cfg['depth']['min_valid_ratio']), 'stall_timeout': 0.5,
             'kp': 1.5, 'cmd_sign': -1.0, 'deadband': 0.05, 'max_speed': 0.9,
             'kp_tilt': 1.2, 'cmd_sign_tilt': 1.0, 'deadband_tilt': 0.05,
             'max_speed_tilt': 0.6, 'tilt_enabled': True,
@@ -84,6 +92,18 @@ class TrackerNode(Node):
             if p[name] not in (-1.0, 1.0):
                 raise ValueError(f'{name} must be -1 or 1')
         
+        cfg['target']['hsv_ranges'][0] = {
+            'lower': list(p['hsv_lower']), 'upper': list(p['hsv_upper'])}
+        cfg['selection']['max_area_ratio'] = p['max_area_ratio']
+        cfg['selection'].get('auto', {}).pop('max_area_ratio_auto', None)
+        cfg['depth'].update(min_area_px=p['min_area'], min_m=p['min_depth_m'],
+                            max_m=p['max_depth_m'],
+                            min_valid_ratio=p['min_valid_depth_ratio'])
+        self.detector = TrackerDetector(cfg)
+        self.info_subscriber = self.create_subscription(
+            CameraInfo, 'camera/color/camera_info', self.on_camera_info,
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
+
         target_qos = QoSProfile(
             depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST, durability=DurabilityPolicy.VOLATILE,
@@ -130,6 +150,11 @@ class TrackerNode(Node):
         
         self.synchronizer.registerCallback(self.on_frames)
         self.get_logger().info('Waiting for synchronized RGB and aligned depth images.')
+
+    def on_camera_info(self, message):
+        """Use calibration only with images of the same size and optical frame."""
+        if all(math.isfinite(f) and f > 0 for f in (message.k[0], message.k[4])):
+            self.camera_info = message
 
     def on_joint_states(self, message):
         """Warn from measured joint angles, including encoder settling tolerance."""
@@ -206,14 +231,15 @@ class TrackerNode(Node):
         if rgb.size == 0 or depth.size == 0:
             return
         self.latest_frame = (color_msg.header, rgb, depth)
-        p = self.settings
         target = PointStamped()
         target.header = color_msg.header
-        coordinates, bbox = detect_target(
-            rgb, depth, p['hsv_lower'], p['hsv_upper'], p['min_area'],
-            p['max_area_ratio'], p['min_depth_m'], p['max_depth_m'],
-            p['min_valid_depth_ratio'], return_bbox=True,
-        )
+        info = self.camera_info
+        intrinsics = None
+        if (info is not None and info.width == color_msg.width
+                and info.height == color_msg.height
+                and info.header.frame_id == color_msg.header.frame_id):
+            intrinsics = (info.k[0], info.k[4])
+        coordinates, bbox = self.detector.detect(rgb, depth, intrinsics)
         target.point.x, target.point.y, target.point.z = coordinates
         self.target_publisher.publish(target)
         box = PolygonStamped()
