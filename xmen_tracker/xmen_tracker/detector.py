@@ -1,4 +1,5 @@
-"""HSV·Contour 검출 파이프라인.
+"""HSV·Contour 검출 파이프라인(블루큐브). 설정: xmen_tracker/config/detector.yaml.
+tracker_node는 detect_bgr_depth_m()으로, tuning·evaluate는 detect()로 호출한다.
 
 영상 → (리사이즈) → HSV 변환 → 색상 마스크 → 잡음 제거 → 컨투어 → (뎁스 검증) → 대상 선택 → 중심 계산
 뎁스 검증: 컨투어 안 뎁스 중앙값 Z로 거리 범위와 실제 크기(px × Z / f)를 확인한다.
@@ -13,11 +14,11 @@ import numpy as np
 import yaml
 
 def package_path(*parts):
-    """target_perception 패키지 파일 경로. 설치(share)에 있으면 그것을, 없으면 소스 위치를 쓴다.
+    """xmen_tracker 패키지 파일 경로. 설치(share)에 있으면 그것을, 없으면 소스 위치를 쓴다.
     --symlink-install이면 share의 파일은 소스(저장소) 파일을 가리킨다."""
     try:
         from ament_index_python.packages import get_package_share_directory
-        p = Path(get_package_share_directory('target_perception')).joinpath(*parts)
+        p = Path(get_package_share_directory('xmen_tracker')).joinpath(*parts)
         if p.exists():
             return p
     except Exception:
@@ -258,7 +259,7 @@ def contour_depth(contour, depth, d):
     cv2.drawContours(m, [contour], -1, 255, -1)
     inner = cv2.erode(m, np.ones((3, 3), np.uint8), iterations=d['erode'])
     z = depth.data[(inner if inner.any() else m) > 0]
-    valid = z[z > 0]
+    valid = z[np.isfinite(z) & (z > 0)]
     if len(z) == 0 or len(valid) < d['min_valid_ratio'] * len(z):
         return None
     return float(np.median(valid)) * depth.scale
@@ -403,6 +404,8 @@ def evaluate(contour, frame_area, s, depth=None, d=None, frame_wh=None, occluder
     if not use_depth:
         return Candidate(contour, area, center, solidity, True, 'ok', partial=partial)
     if z is None:
+        if d.get('require_valid_depth', False):
+            return Candidate(contour, area, center, solidity, False, 'no_depth', partial=partial)
         # 최소 측정거리보다 가깝거나 반사면이라 뎁스가 없다. 색만으로 믿을 만큼 크면(no_depth_min_area) 통과.
         # 단, 가장 가까운 거리(min_m)에 있다고 쳐도 목표보다 크면 다른 물체다(가까이 든 같은 색 카드 등)
         if area < d.get('no_depth_min_area', s['min_area']) and not border:
@@ -594,3 +597,31 @@ def suggest_hsv(hsv_pixels, h_margin=5, sv_margin=30, pct=5):
     s_lo = max(0, int(np.percentile(px[:, 1], pct)) - sv_margin)
     v_lo = max(0, int(np.percentile(px[:, 2], pct)) - sv_margin)
     return [h_lo, s_lo, v_lo], [h_hi, 255, 255]
+
+
+
+def set_focal(cfg, fx, width):
+    """실제 컬러 초점거리(px)로 크기 기반 면적 기준(selection.min_area: auto 등)을 다시 계산한다."""
+    cfg['camera']['fx_px'], cfg['camera']['fx_width'] = float(fx), int(width)
+    resolve_size_limits(cfg)
+
+
+def detect_bgr_depth_m(bgr, depth_m, cfg, fx, fy):
+    """tracker_node 입력 형식으로 검출한다.
+
+    bgr: H×W×3 uint8(BGR), depth_m: 컬러에 정렬된 H×W float 뎁스[m](측정 실패 = NaN 또는 0), fx·fy: 컬러 초점거리[px].
+    반환 ((ex, ey, area_ratio), bbox, Detection). 미검출이면 ((0, 0, 0), None, Detection).
+    bbox는 입력 영상 좌표 (left, top, width, height)."""
+    depth = None
+    if depth_m is not None and depth_cfg(cfg) is not None:
+        mm = np.nan_to_num(np.asarray(depth_m, np.float32) * 1000.0, nan=0.0, posinf=0.0, neginf=0.0)
+        depth = DepthFrame(np.clip(mm, 0, 65535).astype(np.uint16), 0.001, float(fx), float(fy))
+    frame, g = preprocess(bgr, cfg)
+    det, _ = detect(frame, cfg, g, preprocess_depth(depth, g))
+    if not det.detected:
+        return (0.0, 0.0, 0.0), None, det
+    x, y, w, h = det.bbox                      # 처리 영상 좌표 → 입력 영상 좌표
+    x0, y0 = to_original((x, y), g)
+    x1, y1 = to_original((x + w - 1, y + h - 1), g)
+    bbox = (int(round(x0)), int(round(y0)), int(round(x1 - x0)) + 1, int(round(y1 - y0)) + 1)
+    return (float(det.error[0]), float(det.error[1]), float(det.area_ratio)), bbox, det

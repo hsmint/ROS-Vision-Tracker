@@ -1,6 +1,6 @@
-"""Receive matching color and aligned depth frames from xmen_vision.
+"""Receive matching color and aligned depth frames from realsense_node.
 
-Detection uses xmen_tracker.cube_detector with xmen_bringup/param/detector.yaml
+Detection uses xmen_tracker.detector with xmen_tracker/config/detector.yaml
 (measured-lighting HSV, real-size check, box-shape check, partially visible cube).
 """
 
@@ -17,7 +17,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from std_msgs.msg import String
 
-from xmen_tracker import cube_detector
+from xmen_tracker import detector
 
 JOINT_LIMITS_DEG = {'pan': (-180.0, 180.0), 'tilt': (-120.0, 120.0)}
 # Match control_lite's eight encoder ticks of position tolerance.
@@ -26,7 +26,7 @@ LIMIT_WARNING_TOLERANCE_DEG = 8 * 360.0 / 4096
 
 def depth_range_text(cfg):
     """Describe the depth validation range for the startup log."""
-    d = cube_detector.depth_cfg(cfg)
+    d = detector.depth_cfg(cfg)
     return f'{d["min_m"]}-{d["max_m"]} m' if d else 'off'
 
 
@@ -48,7 +48,7 @@ class TrackerNode(Node):
         self.last_rx = self.get_clock().now()
         self.status = 'CAMERA_STALL'
         defaults = {
-            # 검출 설정(HSV·크기·모양·뎁스 검증). 빈 문자열이면 xmen_bringup/param/detector.yaml
+            # 검출 설정(HSV·크기·모양·뎁스 검증). 빈 문자열이면 xmen_tracker/config/detector.yaml
             'detector_config': '', 'stall_timeout': 0.5,
             # 이 변경 전 realsense_node로 녹화한 bag은 RGB 데이터에 'bgr8'이 붙어 있다 → true면 R·B를 바꿔 읽는다
             'legacy_rgb_bag': False,
@@ -63,10 +63,10 @@ class TrackerNode(Node):
             ).value for name, value in defaults.items()
         }
         p = self.settings
-        config_path = p['detector_config'] or str(cube_detector.DEFAULT_CONFIG)
-        self.detector_cfg = cube_detector.load_config(config_path)   # 형식 오류는 여기서 ValueError
+        config_path = p['detector_config'] or str(detector.DEFAULT_CONFIG)
+        self.detector_cfg = detector.load_config(config_path)   # 형식 오류는 여기서 ValueError
         # camera_info가 오기 전에는 설정의 근사 초점거리를 쓴다(640×360 ≈ 460 px)
-        self.fx = self.fy = cube_detector.focal_px(self.detector_cfg)
+        self.fx = self.fy = detector.focal_px(self.detector_cfg)
         self.focal_from_camera = False
         if not 0 < p['stall_timeout'] < float('inf'):
             raise ValueError('stall_timeout must be finite and positive')
@@ -133,7 +133,7 @@ class TrackerNode(Node):
             qos_profile=image_qos,
         )
 
-        # xmen_vision stamps both images of a pair with exactly the same time.
+        # realsense_node stamps both images of a pair with exactly the same time.
         self.synchronizer = TimeSynchronizer(
             [self.color_subscriber, self.depth_subscriber], queue_size=5
         )
@@ -147,7 +147,7 @@ class TrackerNode(Node):
         if self.focal_from_camera or not (fx > 0 and fy > 0):
             return
         self.fx, self.fy = float(fx), float(fy)
-        cube_detector.set_focal(self.detector_cfg, self.fx, message.width or 640)
+        detector.set_focal(self.detector_cfg, self.fx, message.width or 640)
         self.focal_from_camera = True
         s = self.detector_cfg['selection']
         self.get_logger().info(
@@ -236,7 +236,7 @@ class TrackerNode(Node):
         target.header = color_msg.header
         # 색(HSV) → 면적 → 모양(장단비·채움비·solidity·상자 모양) → 뎁스 거리·실제 크기,
         # 화면 가장자리·앞 물체에 가린 큐브는 그 근거가 있을 때만 완화한다.
-        coordinates, bbox, detection = cube_detector.detect_bgr_depth_m(
+        coordinates, bbox, detection = detector.detect_bgr_depth_m(
             bgr, depth, self.detector_cfg, self.fx, self.fy
         )
         if detection.partial:

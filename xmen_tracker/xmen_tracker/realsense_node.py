@@ -46,7 +46,7 @@ class RealSenseNode(Node):
             'publish_hz': 30.0,
             'serial_number': '',
             'frame_id': 'camera_color_optical_frame',
-            # 검출 HSV(xmen_bringup/param/detector.yaml)를 정한 실측 조건과 같게 둔다.
+            # 검출 HSV(xmen_tracker/config/detector.yaml)를 정한 실측 조건과 같게 둔다.
             # 화이트밸런스를 고정해야 조명이 바뀌어도 색상(H)이 흔들리지 않는다. 0 이하 = 자동
             'white_balance': 4600.0,
             'exposure': 0.0,                 # 0 이하 = 자동 노출(밝기 변화를 카메라가 흡수)

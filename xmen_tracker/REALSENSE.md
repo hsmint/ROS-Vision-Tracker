@@ -12,10 +12,9 @@ Build and run from your ROS workspace:
 
 ```bash
 source /opt/ros/lyrical/setup.bash  # Substitute your ROS distribution if needed.
-cd /home/pa03/Develop/xmen
-colcon build --packages-select xmen_vision --symlink-install
+colcon build --packages-select xmen_tracker --symlink-install
 source install/setup.bash
-ros2 run xmen_vision realsense_node
+ros2 run xmen_tracker realsense_node
 ```
 
 Topics (`sensor_msgs/msg/Image`, reliable QoS with a queue depth of 5).
@@ -48,7 +47,7 @@ only the latest frames are aligned and published at up to `publish_hz`, reducing
 CPU use and raw image traffic. Set `publish_hz:=15.0` to reduce processing load.
 
 ```bash
-ros2 run xmen_vision realsense_node --ros-args -p width:=640 -p height:=360 -p depth_width:=640 -p depth_height:=360 -p fps:=30 -p publish_hz:=30.0
+ros2 run xmen_tracker realsense_node --ros-args -p width:=640 -p height:=360 -p depth_width:=640 -p depth_height:=360 -p fps:=30 -p publish_hz:=30.0
 ros2 topic hz /camera/color/image_raw --qos-reliability best_effort
 ros2 topic hz /camera/aligned_depth_to_color/image_raw --qos-reliability best_effort
 ```

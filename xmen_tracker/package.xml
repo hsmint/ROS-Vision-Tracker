@@ -3,11 +3,18 @@
 <package format="3">
   <name>xmen_tracker</name>
   <version>0.0.0</version>
-  <description>Synchronized RealSense color and depth subscriber</description>
+  <description>RealSense capture, depth-validated target perception and pan/tilt tracking</description>
   <maintainer email="hsmint.hong@gmail.com">hsmint</maintainer>
   <license>TODO: License declaration</license>
 
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <test_depend>python3-pytest</test_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>message_filters</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
@@ -15,11 +22,7 @@
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>tf2_ros_py</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
-  <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>python3-yaml</exec_depend>
-  <exec_depend>ament_index_python</exec_depend>
 
 
   <export>

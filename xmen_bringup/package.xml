@@ -9,7 +9,6 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
-  <exec_depend>xmen_vision</exec_depend>
   <exec_depend>xmen_tracker</exec_depend>
   <exec_depend>xmen_control</exec_depend>
   <exec_depend>ros2bag</exec_depend>
