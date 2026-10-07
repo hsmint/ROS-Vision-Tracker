@@ -159,7 +159,9 @@ ros2 bag record -o ~/bags/target_run \
 ```
 
 Stop recording with Ctrl-C. Use a new output directory for each recording.
-The camera publishes synchronized `rgb8` color and aligned `32FC1` depth in
+Bags recorded before `realsense_node` published real BGR data hold RGB bytes labeled `bgr8`;
+replay them with the tracker parameter `legacy_rgb_bag: true`.
+The camera publishes synchronized `bgr8` color and aligned `32FC1` depth in
 meters with identical header timestamps. Both topics are required; arbitrary
 bags containing unaligned depth, millimeter depth, or mismatched timestamps
 are not compatible without conversion. Raw recording needs substantial disk

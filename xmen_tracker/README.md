@@ -51,29 +51,38 @@ and depth stay on the tracker computer by default. Tracking keeps running if
 the remote RViz node disconnects. Start the camera and worker separately;
 neither requires the RViz node to be running.
 
-Settings live in node parameter defaults, with no YAML configuration file.
-Tracker parameters are startup-only: `hsv_lower`, `hsv_upper`, `min_area`,
-`max_area_ratio`, `min_depth_m`, `max_depth_m`, `min_valid_depth_ratio`, and
-`stall_timeout`. Override them when running the tracker directly, for example:
+Detection uses `xmen_tracker/cube_detector.py` with
+`xmen_bringup/param/detector.yaml` (parameter `detector_config`; `hardware_launch.py`
+passes the installed path). Tune detection in that YAML, not in node parameters:
+
+- **HSV from measured lighting**: dark/normal/bright × 0.15–1.0 m, 1,400 frames
+  (cube H 110–113, S 248–255; background blue S ≤ 163 → S ≥ 200, H 104–120).
+- **Real-size check** from aligned depth and the color focal length
+  (`camera/color/camera_info` from `xmen_vision`; config value 460 px until it arrives):
+  distance 0.1–1.1 m, short side ≤ 6 cm, long side ≤ 8 cm, 3–30 cm².
+- **Shape checks**: aspect ≤ 3, extent ≥ 0.60, solidity ≥ 0.75 (rejects a blue 3D-printed
+  bracket of cube size), and `box_fit` (outline must fit a ≤6-vertex polygon; rejects
+  circles, ellipses, rings).
+- **Partially visible cube**: shape and minimum-area limits are relaxed only when the
+  blob is cut by the image border along that border, or a non-blue object in front
+  (closer in depth) explains the missing part.
+
+Other startup-only parameters: `stall_timeout`, and `legacy_rgb_bag` (true for bags
+recorded before `realsense_node` published real BGR data).
 
 ```bash
-ros2 run xmen_tracker tracker_node --ros-args -p max_depth_m:=2.0
+ros2 run xmen_tracker tracker_node --ros-args -p detector_config:=/path/to/detector.yaml
 ```
 
-HSV defaults come from `xmen_vision2/config/detector.yaml`. Area is measured at
-the input resolution. Candidates need valid depth; absent, invalid, or
-out-of-range depth rejects the candidate. There is no color-only fallback.
-Physical-size filtering requires camera intrinsics, which `xmen_vision` does
-not currently publish, so physical-size parameters are omitted.
-
-The largest valid color contour is selected each frame, with image-center
-proximity breaking equal-area ties. This does not maintain object identity
-between multiple blue objects. Tune HSV and depth bounds for your target.
+The largest valid candidate is selected each frame, with image-center proximity
+breaking near-equal-area ties. This does not maintain object identity between
+multiple blue objects.
 
 Local tracking input subscriptions use reliable, volatile, keep-last QoS with depth 5
 and an exact-time synchronization queue of 5 pairs:
 
-- `camera/color/image_raw`: RGB color (`rgb8`).
+- `camera/color/image_raw`: BGR color (`bgr8`).
+- `camera/color/camera_info`: color intrinsics (transient local; optional).
 - `camera/aligned_depth_to_color/image_raw`: depth (`32FC1`, meters; missing
   depth is `NaN`).
 
