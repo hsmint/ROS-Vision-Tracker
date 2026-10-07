@@ -6,8 +6,8 @@ import rclpy
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import CameraInfo, Image
 import pyrealsense2 as rs
 
 def image_message(array, encoding, stamp, frame_id):
@@ -46,6 +46,12 @@ class RealSenseNode(Node):
             'publish_hz': 30.0,
             'serial_number': '',
             'frame_id': 'camera_color_optical_frame',
+            # 검출 HSV(xmen_bringup/param/detector.yaml)를 정한 실측 조건과 같게 둔다.
+            # 화이트밸런스를 고정해야 조명이 바뀌어도 색상(H)이 흔들리지 않는다. 0 이하 = 자동
+            'white_balance': 4600.0,
+            'exposure': 0.0,                 # 0 이하 = 자동 노출(밝기 변화를 카메라가 흡수)
+            'auto_exposure_priority': 1.0,   # 1 = 어두우면 프레임률을 낮춰서라도 노출을 늘림
+            'backlight_compensation': 0.0,
         }
         for name, value in defaults.items():
             self.declare_parameter(
@@ -74,8 +80,9 @@ class RealSenseNode(Node):
         config = rs.config()
         if values['serial_number']:
             config.enable_device(values['serial_number'])
+        # 메시지 encoding('bgr8')과 실제 데이터 순서를 맞춘다(예전: rgb8 데이터를 bgr8로 표시)
         for stream, pixel_format, width, height in (
-            (rs.stream.color, rs.format.rgb8, values['width'], values['height']),
+            (rs.stream.color, rs.format.bgr8, values['width'], values['height']),
             (rs.stream.depth, rs.format.z16, values['depth_width'], values['depth_height']),
         ):
             config.enable_stream(
@@ -85,6 +92,14 @@ class RealSenseNode(Node):
         pipeline = rs.pipeline()
         profile = pipeline.start(config)
         self.pipeline = pipeline
+        self._apply_color_options(profile.get_device().first_color_sensor(), values)
+        self.camera_info = self._camera_info(profile)
+        # 초점거리는 바뀌지 않으므로 한 번 발행하고 늦게 붙는 구독자에게도 전달한다
+        self.info_publisher = self.create_publisher(
+            CameraInfo, 'camera/color/camera_info',
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                       durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.info_publisher.publish(self.camera_info)
         self.depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
         self.align = rs.align(rs.stream.color)
         # poll_for_frames returns the latest available frames; frames between
@@ -97,6 +112,44 @@ class RealSenseNode(Node):
             f"publishing up to {values['publish_hz']:g} Hz; "
             'aligned depth uses 32FC1 in meters.'
         )
+
+    def _apply_color_options(self, sensor, values):
+        """화이트밸런스·노출 등 컬러 센서 옵션. 지원하지 않는 옵션은 경고 후 넘어간다."""
+        def set_option(option, value):
+            if not sensor.supports(option):
+                self.get_logger().warning(f'Color sensor does not support {option}')
+                return
+            r = sensor.get_option_range(option)
+            sensor.set_option(option, min(max(float(value), r.min), r.max))
+        if values['white_balance'] > 0:
+            set_option(rs.option.enable_auto_white_balance, 0)
+            set_option(rs.option.white_balance, values['white_balance'])
+        else:
+            set_option(rs.option.enable_auto_white_balance, 1)
+        if values['exposure'] > 0:
+            set_option(rs.option.enable_auto_exposure, 0)
+            set_option(rs.option.exposure, values['exposure'])
+        else:
+            set_option(rs.option.enable_auto_exposure, 1)
+        set_option(rs.option.auto_exposure_priority, values['auto_exposure_priority'])
+        set_option(rs.option.backlight_compensation, values['backlight_compensation'])
+        self.get_logger().info(
+            f"Color white_balance={'auto' if values['white_balance'] <= 0 else values['white_balance']}, "
+            f"exposure={'auto' if values['exposure'] <= 0 else values['exposure']}, "
+            f"auto_exposure_priority={values['auto_exposure_priority']:g}")
+
+    def _camera_info(self, profile):
+        """컬러(정렬된 뎁스도 같은 좌표) 내부 파라미터."""
+        intr = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+        info = CameraInfo()
+        info.header.frame_id = self.frame_id
+        info.width, info.height = intr.width, intr.height
+        info.distortion_model = 'plumb_bob'
+        info.d = [float(v) for v in intr.coeffs[:5]]
+        info.k = [intr.fx, 0.0, intr.ppx, 0.0, intr.fy, intr.ppy, 0.0, 0.0, 1.0]
+        info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        info.p = [intr.fx, 0.0, intr.ppx, 0.0, 0.0, intr.fy, intr.ppy, 0.0, 0.0, 0.0, 1.0, 0.0]
+        return info
 
     def publish_frames(self):
         """Publish each available pair with a shared ROS receipt timestamp."""
