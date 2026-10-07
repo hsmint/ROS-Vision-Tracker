@@ -11,6 +11,9 @@
 constexpr uint8_t AXES = 2;
 constexpr uint32_t CYCLE_US = 10000;  // 100 Hz target
 constexpr uint32_t COMMAND_TIMEOUT_MS = 200;
+// Response deadline, not a fixed delay: successful reads return immediately.
+// Allow both motors to reply; the previous 2 ms budget caused missing replies.
+constexpr uint32_t MOTOR_TIMEOUT_MS = 500;
 constexpr float SPEED_UNIT = 1.374f * PI / 180.0f;
 constexpr float MAX_RAD_S = 1.0f;
 constexpr int32_t MAX_POSITION = 1048575;
@@ -71,14 +74,15 @@ bool responseOK() {
 }
 
 bool readMotor(uint8_t i, uint16_t addr, void *data, uint16_t size) {
-  int count = motors.read(axes[i].id, addr, size, (uint8_t *)data, size, 2);
+  int count = motors.read(axes[i].id, addr, size, (uint8_t *)data, size,
+    MOTOR_TIMEOUT_MS);
   return (count == size && responseOK()) ||
     failure("read", axes[i].id, addr, count);
 }
 
 bool writeMotor(uint8_t i, uint16_t addr, int32_t value, uint16_t size) {
   return (motors.write(axes[i].id, addr,
-    (uint8_t *)&value, size, 2) && responseOK()) ||
+    (uint8_t *)&value, size, MOTOR_TIMEOUT_MS) && responseOK()) ||
     failure("write", axes[i].id, addr, value);
 }
 
@@ -94,7 +98,7 @@ bool configure(uint8_t i, uint16_t addr, int32_t value, uint16_t size) {
 bool readBoth(uint16_t addr, uint16_t size) {
   read_packet.addr = addr;
   read_packet.length = size;
-  if (!motors.syncRead(read_packet, replies, 2) ||
+  if (!motors.syncRead(read_packet, replies, MOTOR_TIMEOUT_MS) ||
       replies.id_count != AXES) {
     uint8_t missing = replies.id_count < AXES ? axes[replies.id_count].id : 0;
     return failure("sync_read", missing, addr, replies.id_count);
