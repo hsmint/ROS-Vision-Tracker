@@ -4,11 +4,11 @@ ROS 2 Lyrical launches for the current `xmen_vision` and `xmen_tracker` nodes.
 
 | Machine | Launch | Nodes |
 |---|---|---|
-| Raspberry Pi | `hardware_launch.py` | RealSense camera + tracker + JPEG preview + xmen_control/control |
+| Raspberry Pi | `hardware_launch.py` | RealSense camera + tracker + JPEG preview + xmen_control/control_lite |
 | Remote PC | `rviz2_launch.py` | Overlay/marker node + RViz2 |
 
 The tracker publishes `/target`, `/tracking/bbox`, `/perception_status`, and
-`/cmd_vel`. The hardware launch starts `xmen_control/control`.
+`/cmd_vel`. The hardware launch starts `xmen_control/control_lite`.
 The tracker is the only `/cmd_vel` source; the legacy controller is not started.
 Tracking continues without the remote PC.
 
@@ -36,7 +36,7 @@ ros2 launch xmen_bringup hardware_launch.py
 The default camera capture is 30 FPS at 640×360 color and 640×360 native depth.
 Depth is aligned to color, and image publication targets 30 Hz. Detection processes the newest synchronized pair at 20 Hz, dropping superseded
 pairs before image conversion. Commands keep their independent 20 Hz timer.
-Measured joint feedback from `control` remains 2 Hz. Override image processing
+Joint feedback from `control_lite` targets 100 Hz. Override image processing
 with `image_hz:=15.0` for lower CPU load (maximum 30). Camera publication targets 30 Hz; detection and commands target 20 Hz each.
 Actual timing depends on CPU load and image delivery.
 Local tracking keeps reliable raw RGB/depth delivery on the Pi. A separate
@@ -216,26 +216,24 @@ Rosbag clock, topic filtering, and QoS behavior follow the
 
 ## OpenCR control
 
-Live `hardware_launch.py` starts only `xmen_control/control` for serial control.
-It does not start `target_control` or the interactive `main_control` program.
-The tracker remains the only `/cmd_vel` publisher. Bag mode skips control.
+Live `hardware_launch.py` starts `xmen_control/control_lite` for serial control.
+Use it with `firmware/opencr_lite.ino` on the OpenCR. The full controller's
+V3 firmware uses a different protocol. Bag mode skips the motor controller;
+`start_control:=false` also disables it for live camera/tracker operation.
 
 ```bash
-ros2 launch xmen_bringup hardware_launch.py port:=/dev/ttyACM0 auto_home:=true
-# Camera and tracker only:
+ros2 launch xmen_bringup hardware_launch.py port:=/dev/ttyACM0
+# Camera and tracker without motor control:
 ros2 launch xmen_bringup hardware_launch.py start_control:=false
 ```
 
-The control node opens the serial port at 115200 baud. `auto_home:=true` is its
-existing default: it waits for verified firmware and an idle board, homes once,
-and pauses tracking commands until homing completes. `auto_home:=false` skips
-node-startup homing and saves automatic boot homing as disabled. Opening serial
-may reset the board, so its previously saved startup behavior may happen before
-the node can update that setting.
+`control_lite` opens the port at 115200 baud and automatically homes tilt, then
+pan, once at startup before accepting `/cmd_vel`. It has no `auto_home` option;
+that launch argument has been removed. Stop any separately running controller
+before launching bringup so only one process owns the serial port.
 
-This node requires `OPENCR_CONTROL_V3_RAD_VELOCITY` firmware and uses radians
-per second. It publishes `/joint_states` and `/status` and accepts `/opencr/home`
-and `/opencr/stop`. The old `output_enabled` and `baud` launch arguments are
-removed because this node does not support them. Its joint names (`pan`, `tilt`)
-still need a verified mapping to the CAD URDF before physical joint feedback
-can animate that model correctly.
+Commands use radians per second: `angular.z` drives pan and `angular.y` drives
+tilt. `/joint_states` reports measured `pan` and `tilt` positions, targeting
+100 Hz. Zero velocity stops motion, and commands expire after 0.2 seconds.
+The lite node does not provide `/status`, `/opencr/home`, or `/opencr/stop`;
+fault diagnostics are written to its ROS log.

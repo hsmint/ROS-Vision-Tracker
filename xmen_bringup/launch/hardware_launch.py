@@ -35,10 +35,9 @@ def _setup(context):
     if not use_bag:
         if start_control:
             actions.append(Node(
-                package='xmen_control', executable='control', output='screen',
+                package='xmen_control', executable='control_lite', output='screen',
                 parameters=[LaunchConfiguration('control_params_file'), {
                     'use_sim_time': False,
-                    'auto_home': ParameterValue(LaunchConfiguration('auto_home'), value_type=bool),
                     'port': ParameterValue(LaunchConfiguration('port'), value_type=str),
                 }],
             ))
@@ -72,9 +71,7 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file', default_value=str(share / 'param/tracker.yaml'),
                               description='Tracker ROS parameter YAML.'),
         DeclareLaunchArgument('start_control', default_value='true', choices=['true', 'false'],
-                              description='Start xmen_control/control in live mode.'),
-        DeclareLaunchArgument('auto_home', default_value='true', choices=['true', 'false'],
-                              description='Home on control startup and save firmware automatic homing setting.'),
+                              description='Start xmen_control/control_lite in live mode (homes once at startup).'),
         DeclareLaunchArgument('control_params_file', default_value=str(share / 'param/control.yaml')),
         DeclareLaunchArgument('port', default_value='/dev/ttyACM0'),
         DeclareLaunchArgument('image_hz', default_value='30.0',
