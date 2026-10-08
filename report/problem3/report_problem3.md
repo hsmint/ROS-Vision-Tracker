@@ -1,14 +1,18 @@
 # 문제 3 — 중심 기반 추적 제어 (초안)
 
-작성 2026-10-06. 실험 장비: Raspberry Pi (Ubuntu 26.04, ROS 2 Lyrical) + RealSense D435 + OpenCR(V3 펌웨어) + Dynamixel 팬(ID11)·틸트(ID12).
-기준: 실험에 쓴 보드(`~/ws/src/Xmen`)의 작업본 — 커밋 `7d900db` + 커밋 전 수정. `(확인 필요)` 표시는 제출 전에 값을 확인해 채운다.
+작성날짜: 2026-10-06. 
+
+실험 장비: 
+- Raspberry Pi (Ubuntu 26.04, ROS 2 Lyrical)
+- RealSense D435 + OpenCR(V3 펌웨어)
+- Dynamixel 팬(ID11)·틸트(ID12)
+
 
 ## 1. 구성
 
-```
-D435 → target_detector ─/target(ex, ey, 면적비)→ tracking_controller ─/cmd_vel(rad/s)→ control ─시리얼 "v 팬 틸트"→ OpenCR → Dynamixel
-                                                   └ /tracking_status                    └ /joint_states (실제 각도, 약 2 Hz)
-```
+![문제 3 구성 · 인지 → 제어 → 구동](pic/problem3_flow.png)
+
+*문제 3 구성 · 인지 → 제어 → 구동*
 
 | 단계 | 노드 | 역할 |
 |---|---|---|
