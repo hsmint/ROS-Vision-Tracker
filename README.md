@@ -82,24 +82,13 @@ configured rates; see [Performance](#performance-snapshot) for measured performa
 
 </div>
 
-<table>
-  <tr>
-    <th width="50%">🎯 Real-world tracking</th>
-    <th width="50%">🖥️ Inside RViz2</th>
-  </tr>
-  <tr>
-    <td align="center">
-      <video controls playsinline preload="metadata" width="420"
-        src="report/video/demo.mp4" poster="report/video/demo-preview.jpg">
-      </video>
-    </td>
-    <td align="center">
-      <video controls playsinline preload="metadata" width="420"
-        src="report/video/demo2.mp4" poster="report/video/demo2-preview.jpg">
-      </video>
-    </td>
-  </tr>
-</table>
+#### 🎯 Real-world tracking
+
+https://github.com/user-attachments/assets/06dc1db3-719f-4d2d-9c7e-61715f263b9c
+
+#### 🖥️ Inside RViz2
+
+https://github.com/user-attachments/assets/06f8cf11-2dbd-4d1b-b99b-0d997ce7b2b6
 
 ## Prerequisites
 
