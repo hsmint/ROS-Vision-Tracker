@@ -4,7 +4,7 @@
   <version>0.0.0</version>
   <description>Raspberry Pi tracking and remote visualization launch files.</description>
   <maintainer email="hsmint.hong@gmail.com">hsmint</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

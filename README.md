@@ -6,7 +6,7 @@
 
 A depth-aware, two-axis camera tracker built with ROS 2 and Raspberry Pi.
 
-**KANT PA 1기 · Project 1 · Team xmen**
+**KANT PA 1기 · Project 1 · Team Xmen**
 
 ![ROS 2 Lyrical](https://img.shields.io/badge/ROS_2-Lyrical-22314E?style=for-the-badge&logo=ros&logoColor=white)
 ![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi-ARM64-A22846?style=for-the-badge&logo=raspberrypi&logoColor=white)
