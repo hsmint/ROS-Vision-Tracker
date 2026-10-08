@@ -597,9 +597,9 @@ GIF·MP4는 Git LFS로 보관하므로 저장소를 받은 뒤 `git lfs pull`을
 
 | 항목 | 내용 | 위치 |
 | --- | --- | --- |
-| 기록 | 대표 성공 장면·소실/복귀 장면을 영상·뎁스·목표·명령·관절 토픽과 함께 기록 | ` ~ /bags/p5_success`, ` ~ /bags/p5_loss_return` |
+| 기록 | 대표 성공 장면·소실/복귀 장면을 영상·뎁스·목표·명령·관절 토픽과 함께 기록 | ` ~/bags/p5_success`, ` ~/bags/p5_loss_return` |
 | 메타데이터 | bag마다 `metadata.yaml` + `bag_info.txt`(해상도·토픽·메시지 수·기간) + 실행 당시 설정 3종 + `uncommitted.diff` | 각 bag 폴더 |
-| 입력 재처리 | bag 영상만 재생 → `tracker_node`로 다시 검출 → `/target_replay` 등 별도 토픽으로 기록 | ` ~ /bags/p5_*_replay` |
+| 입력 재처리 | bag 영상만 재생 → `tracker_node`로 다시 검출 → `/target_replay` 등 별도 토픽으로 기록 | ` ~/bags/p5_*_replay` |
 | 결과 재분석 | 저장된 `/target`·`/cmd_vel`에서 FPS·검출 출력 비율·RMSE·소실 이벤트 재계산, 재처리 결과와 프레임별 대조 | `replay_info.txt`, `compare.csv` |
 | 다른 팀원 실행 | 다른 PC에서 `p5_success` 입력 재처리 + RViz 확인(부분 구간) | 5.4절 |
 
@@ -621,19 +621,19 @@ GIF·MP4는 Git LFS로 보관하므로 저장소를 받은 뒤 `git lfs pull`을
 ```bash
 # 터미널 1 — 검출기 (원본과 섞이지 않게 remap, bag 시간 사용)
 ros2 run xmen_tracker tracker_node --ros-args \
-  --params-file ~ /bags/p5_success/tracker.yaml \
+  --params-file ~/bags/p5_success/tracker.yaml \
   -p detector_config:=$HOME/bags/p5_success/detector.yaml \
   -p use_sim_time:=true \
   -r /target:=/target_replay -r /cmd_vel:=/cmd_vel_replay \
   -r /perception_status:=/perception_status_replay
 
 # 터미널 2 — 영상만 재생, 촬영 시각을 /clock으로
-ros2 bag play ~ /bags/p5_success --clock-topics /camera/color/image_raw \
+ros2 bag play ~/bags/p5_success --clock-topics /camera/color/image_raw \
   --qos-profile-overrides-path <QoS override> \
   --topics /camera/color/image_raw /camera/aligned_depth_to_color/image_raw /camera/color/camera_info
 
 # 터미널 3 — 재처리 결과 기록
-ros2 bag record -s mcap -o ~ /bags/p5_success_replay \
+ros2 bag record -s mcap -o ~/bags/p5_success_replay \
   /target_replay /cmd_vel_replay /perception_status_replay
 ```
 
@@ -658,15 +658,14 @@ ros2 bag record -s mcap -o ~ /bags/p5_success_replay \
 `/target` 353/247 · `/cmd_vel` 418/326 · `/perception_status` 42/54 · `/joint_states` 2,274/1,353.
 mcap 4개의 SHA-256은 `problem5/report_problem5.md`에 전문이 있다.
 
-### 2.2 bag 메타데이터
+### 5.2.1 bag 메타데이터
 
 | bag | 장면 | 기간 [s] | 크기 | 메시지 수 | SHA-256 (mcap) |
 |---|---|---|---|---|---|
 | `p5_success` | 대표 성공 | 47.81 | 912.0 MiB | 4864 | `f2d9a2c3…8b7594638` |
 | `p5_loss_return` | 소실·복귀 | 29.48 | 575.0 MiB | 3101 | `34fc72b6…1e63938` |
 
-> 용량이 커서 **저장소에 올리지 않았다.** 외부 저장 위치·
-> 
+> 용량이 커서 **저장소에 올리지 않았다.** 외부 저장 위치는 본 보고서에 기재하지 않았다.
 
 ## 5.3 재현 결과
 
