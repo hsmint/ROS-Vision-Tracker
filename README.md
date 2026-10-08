@@ -13,7 +13,7 @@ A depth-aware, two-axis camera tracker built with ROS 2 and Raspberry Pi.
 ![Intel RealSense](https://img.shields.io/badge/Intel-RealSense-0071C5?style=for-the-badge&logo=intel&logoColor=white)
 ![OpenCR](https://img.shields.io/badge/OpenCR-DYNAMIXEL-00897B?style=for-the-badge)
 
-**[Quick start](#quick-start)** · **[Architecture](#architecture)** · **[Performance](#performance-snapshot)** · **[Documentation](#documentation)** · **[Releases](https://github.com/hsmint/ROS-Vision-Tracker/releases)**
+**[Quick start](#quick-start)** · **[Architecture](#architecture)** · **[Demo](#demo)** · **[Performance](#performance-snapshot)** · **[Documentation](#documentation)** · **[Releases](https://github.com/hsmint/ROS-Vision-Tracker/releases)**
 
 </div>
 
@@ -73,6 +73,33 @@ configured rates; see [Performance](#performance-snapshot) for measured performa
 | [`xmen_bringup`](xmen_bringup/README.md) | Hardware and remote visualization launch files |
 | [`xmen_description`](xmen_description/README.md) | Pan/tilt URDF, CAD meshes, and RViz configuration |
 | [`firmware`](firmware/) | OpenCR source and prebuilt ARM64 flashing bundle |
+
+## Demo
+
+<div align="center">
+
+### 🎬 See ROS-Vision-Tracker in action
+
+</div>
+
+<table>
+  <tr>
+    <th width="50%">🎯 Real-world tracking</th>
+    <th width="50%">🖥️ Inside RViz2</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <video controls playsinline preload="metadata" width="420"
+        src="report/video/demo.mp4" poster="report/video/demo-preview.jpg">
+      </video>
+    </td>
+    <td align="center">
+      <video controls playsinline preload="metadata" width="420"
+        src="report/video/demo2.mp4" poster="report/video/demo2-preview.jpg">
+      </video>
+    </td>
+  </tr>
+</table>
 
 ## Prerequisites
 
