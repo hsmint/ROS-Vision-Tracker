@@ -1,6 +1,8 @@
 # opencr_control.ino 코드 설명 보고서
 
-2026-10-03 · pa06
+date: 2026-10-03
+
+Pi: pa06
 
 ## 개요
 
@@ -15,7 +17,7 @@ opencr_control.ino(493줄, 버전 `OPENCR_CONTROL_V2`)는 OpenCR 보드에서 �
 
 아두이노 스케치라서 `setup()`은 전원을 켤 때 한 번, `loop()`는 그 뒤로 계속 반복합니다. 나머지 함수는 모두 이 두 함수가 부르는 부품입니다. C++에서는 함수 안에 함수를 만들 수 없어서, 부품 함수들은 `loop()` 밖에 정의되어 있습니다.
 
-![함수 호출 구조 · setup, loop, command, 공통 부품](../pic/opencr_control_report_figure.png)
+![함수 호출 구조 · setup, loop, command, 공통 부품](pic/opencr_control_report_figure.png)
 
 *함수 호출 구조 · setup, loop, command, 공통 부품*
 
