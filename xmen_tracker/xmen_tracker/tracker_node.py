@@ -13,6 +13,7 @@ from geometry_msgs.msg import Point32, PointStamped, PolygonStamped, Twist
 from message_filters import Subscriber, TimeSynchronizer
 from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
+from rclpy.clock import Clock, ClockType
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -55,6 +56,8 @@ class TrackerNode(Node):
             'detector_config': '', 'stall_timeout': 0.5,
             # 이 변경 전 realsense_node로 녹화한 bag은 RGB 데이터에 'bgr8'이 붙어 있다 → true면 R·B를 바꿔 읽는다
             'legacy_rgb_bag': False,
+            # true면 2초마다 수신/동기화/처리 개수와 스탬프 나이를 info로 출력(bag 재생 시 시간 확인용)
+            'debug_timing': False,
             'kp': 1.5, 'cmd_sign': -1.0, 'deadband': 0.05, 'max_speed': 0.9,
             'kp_tilt': 1.2, 'cmd_sign_tilt': 1.0, 'deadband_tilt': 0.05,
             'max_speed_tilt': 0.6, 'tilt_enabled': True,
@@ -147,6 +150,16 @@ class TrackerNode(Node):
         )
         
         self.synchronizer.registerCallback(self.on_frames)
+        # 시간 진단: 각 영상의 최신 스탬프와 단계별 개수. use_sim_time인데 /clock이 없으면
+        # 노드 시계 타이머가 멈추므로 진단 타이머는 steady clock으로 돈다.
+        self.timing = {'color': 0, 'depth': 0, 'synced': 0, 'processed': 0, 'stale': 0}
+        self.last_raw_stamp_ns = {'color': None, 'depth': None}
+        self.last_stale_age = None
+        self.color_subscriber.registerCallback(lambda m: self.note_raw('color', m))
+        self.depth_subscriber.registerCallback(lambda m: self.note_raw('depth', m))
+        self.timing_timer = self.create_timer(
+            2.0, self.report_timing, clock=Clock(clock_type=ClockType.STEADY_TIME)
+        )
         self.get_logger().info('Waiting for synchronized RGB and aligned depth images.')
 
     def on_camera_info(self, message):
@@ -183,10 +196,64 @@ class TrackerNode(Node):
                 throttle_duration_sec=5.0,
             )
 
+    def note_raw(self, name, message):
+        """Record each image stream before synchronization for timing diagnostics."""
+        self.timing[name] += 1
+        stamp = message.header.stamp
+        self.last_raw_stamp_ns[name] = stamp.sec * 1000000000 + stamp.nanosec
+
+    def report_timing(self):
+        """Explain, every 2 s of wall time, where bag or camera frames are being lost."""
+        t, raw = self.timing, self.last_raw_stamp_ns
+        now_ns = self.get_clock().now().nanoseconds
+        sim = self.get_parameter('use_sim_time').value
+        clock = f'use_sim_time={sim}, now={now_ns / 1e9:.3f} s'
+        if self.settings['debug_timing']:
+            ages = ', '.join(
+                f'{k} age {(now_ns - v) / 1e9:+.3f} s' for k, v in raw.items() if v is not None
+            ) or 'no images'
+            self.get_logger().info(
+                f'timing 2 s: color {t["color"]}, depth {t["depth"]}, synced {t["synced"]}, '
+                f'processed {t["processed"]}, stale {t["stale"]}; {ages}; {clock}'
+            )
+        if t['color'] and t['depth'] and not t['synced']:
+            diff_ms = (raw['color'] - raw['depth']) / 1e6
+            self.get_logger().warning(
+                f'Color and depth images arrive but never share an exact stamp '
+                f'(latest color-depth = {diff_ms:+.3f} ms); TimeSynchronizer drops them all.'
+            )
+        if t['stale'] and not t['processed']:
+            if sim and now_ns == 0:
+                hint = 'use_sim_time is true but no /clock yet: play the bag with --clock.'
+            elif sim:
+                hint = 'check that only the bag publishes /clock (ros2 bag play --clock).'
+            else:
+                hint = ('bag stamps are in the past: ros2 bag play <bag> --clock and run '
+                        'tracker_node with -p use_sim_time:=true.')
+            self.get_logger().warning(
+                f'Dropped {t["stale"]} synced pairs as outside max_input_age '
+                f'{self.settings["max_input_age"]} s (latest age {self.last_stale_age:+.3f} s, '
+                f'{clock}); {hint}'
+            )
+        self.timing = dict.fromkeys(t, 0)
+
     def on_frames(self, color_msg, depth_msg):
         """Retain only the newest synchronized pair until the detection timer."""
+        self.timing['synced'] += 1
         stamp = color_msg.header.stamp
         stamp_ns = stamp.sec * 1000000000 + stamp.nanosec
+        # bag을 다시 재생하거나 -l로 반복하면 스탬프가 뒤로 간다 → 이전 상태를 잊고 새로 시작
+        if (self.last_stamp_ns is not None
+                and (self.last_stamp_ns - stamp_ns) / 1e9 > self.settings['stall_timeout']):
+            self.get_logger().warning(
+                f'Image stamp jumped back {(self.last_stamp_ns - stamp_ns) / 1e9:.3f} s '
+                '(bag restart or loop); resetting tracking state.'
+            )
+            self.last_stamp_ns = None
+            self.pending_frames = None
+            self.last_target = None
+            self.last_rx = self.get_clock().now()
+            self.cube_tracker.reset()
         if self.last_stamp_ns is not None and stamp_ns <= self.last_stamp_ns:
             return
         if self.pending_frames is not None:
@@ -209,7 +276,10 @@ class TrackerNode(Node):
             return
         age = (self.get_clock().now().nanoseconds - stamp_ns) / 1e9
         if not 0 <= age <= self.settings['max_input_age']:
+            self.timing['stale'] += 1
+            self.last_stale_age = age
             return
+        self.timing['processed'] += 1
         if (
             color_msg.height != depth_msg.height
             or color_msg.width != depth_msg.width
