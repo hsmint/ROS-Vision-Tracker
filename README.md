@@ -68,10 +68,10 @@ configured rates; see [Performance](#performance-snapshot) for measured performa
 
 | Package | Responsibility |
 | :--- | :--- |
-| [`xmen_tracker`](xmen_tracker/README.md) | RealSense capture, cube detection/tracking, velocity commands, JPEG preview, RViz overlays |
+| [`xmen_tracker`](xmen_tracker/) | RealSense capture, cube detection/tracking, velocity commands, JPEG preview, RViz overlays |
 | [`xmen_control`](xmen_control/) | OpenCR serial driver (`control_lite`) and `/joint_states` publication |
-| [`xmen_bringup`](xmen_bringup/README.md) | Hardware and remote visualization launch files |
-| [`xmen_description`](xmen_description/README.md) | Pan/tilt URDF, CAD meshes, and RViz configuration |
+| [`xmen_bringup`](xmen_bringup/) | Hardware and remote visualization launch files |
+| [`xmen_description`](xmen_description/) | Pan/tilt URDF, CAD meshes, and RViz configuration |
 | [`firmware`](firmware/) | OpenCR source and prebuilt ARM64 flashing bundle |
 
 ## Demo
@@ -105,7 +105,7 @@ https://github.com/user-attachments/assets/06f8cf11-2dbd-4d1b-b99b-0d997ce7b2b6
 - [ROS 2 Lyrical](https://docs.ros.org/en/lyrical/Installation/Ubuntu-Install-Debs.html), installed at `/opt/ros/lyrical`
 - [RealSense SDK Python bindings (`pyrealsense2`)](https://github.com/realsenseai/librealsense)
   for the system Python, plus its USB rules. rosdep does not install this one; see
-  [REALSENSE.md](xmen_tracker/REALSENSE.md).
+  [camera package](xmen_tracker/).
 - Serial port access for your user (for flashing and for `control_lite`):
 
   ```bash
@@ -250,19 +250,19 @@ ros2 topic echo /target --qos-reliability best_effort
 ```
 
 To record and replay rosbags, use the RViz options, or set serial-port
-overrides, see the [bringup documentation](xmen_bringup/README.md). To tune
-detection, see [xmen_tracker](xmen_tracker/README.md) and
-[PERCEPTION.md](xmen_tracker/PERCEPTION.md).
+overrides, see the [bringup package](xmen_bringup/). To tune
+detection, see [xmen_tracker](xmen_tracker/) and
+[PERCEPTION.md](lv2_module5/results/PERCEPTION.md).
 
 ## Documentation
 
 | I want to… | Read this |
 | :--- | :--- |
-| Configure launch options, remote RViz, or bag playback | [Bringup guide](xmen_bringup/README.md) |
-| Understand tracker nodes, topics, and commands | [Tracker guide](xmen_tracker/README.md) |
-| Tune detection or evaluate recordings | [Perception guide](xmen_tracker/PERCEPTION.md) |
-| Set up the camera and Python bindings | [RealSense guide](xmen_tracker/REALSENSE.md) |
-| Inspect the robot model and meshes | [Robot description](xmen_description/README.md) |
+| Configure launch options, remote RViz, or bag playback | [Bringup package](xmen_bringup/) |
+| Understand tracker nodes, topics, and commands | [Tracker package](xmen_tracker/) |
+| Tune detection or evaluate recordings | [Perception guide](lv2_module5/results/PERCEPTION.md) |
+| Set up the camera and Python bindings | [Camera package](xmen_tracker/) |
+| Inspect the robot model and meshes | [Robot description](xmen_description/) |
 | Modify the OpenCR firmware | [Firmware source](firmware/opencr_lite.ino) |
 
 ## Performance Snapshot
