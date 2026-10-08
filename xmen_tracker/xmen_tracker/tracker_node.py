@@ -1,7 +1,9 @@
-"""Receive matching color and aligned depth frames from xmen_vision.
+"""Receive matching color and aligned depth frames from realsense_node.
 
-Detection uses xmen_tracker.cube_detector with xmen_bringup/param/detector.yaml
+Detection uses xmen_tracker.detector with xmen_tracker/config/detector.yaml
 (measured-lighting HSV, real-size check, box-shape check, partially visible cube).
+xmen_tracker.cube_tracker keeps the same cube across frames and bridges frames the
+detector misses (occlusion) with CSRT, verified on the current frame (tracking section).
 """
 
 import math
@@ -11,13 +13,15 @@ from geometry_msgs.msg import Point32, PointStamped, PolygonStamped, Twist
 from message_filters import Subscriber, TimeSynchronizer
 from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
+from rclpy.clock import Clock, ClockType
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image, JointState
 from std_msgs.msg import String
 
-from xmen_tracker import cube_detector
+from xmen_tracker import detector
+from xmen_tracker.cube_tracker import CubeTracker
 
 JOINT_LIMITS_DEG = {'pan': (-180.0, 180.0), 'tilt': (-120.0, 120.0)}
 # Match control_lite's eight encoder ticks of position tolerance.
@@ -26,7 +30,7 @@ LIMIT_WARNING_TOLERANCE_DEG = 8 * 360.0 / 4096
 
 def depth_range_text(cfg):
     """Describe the depth validation range for the startup log."""
-    d = cube_detector.depth_cfg(cfg)
+    d = detector.depth_cfg(cfg)
     return f'{d["min_m"]}-{d["max_m"]} m' if d else 'off'
 
 
@@ -48,10 +52,12 @@ class TrackerNode(Node):
         self.last_rx = self.get_clock().now()
         self.status = 'CAMERA_STALL'
         defaults = {
-            # 검출 설정(HSV·크기·모양·뎁스 검증). 빈 문자열이면 xmen_bringup/param/detector.yaml
+            # 검출 설정(HSV·크기·모양·뎁스 검증). 빈 문자열이면 xmen_tracker/config/detector.yaml
             'detector_config': '', 'stall_timeout': 0.5,
             # 이 변경 전 realsense_node로 녹화한 bag은 RGB 데이터에 'bgr8'이 붙어 있다 → true면 R·B를 바꿔 읽는다
             'legacy_rgb_bag': False,
+            # true면 2초마다 수신/동기화/처리 개수와 스탬프 나이를 info로 출력(bag 재생 시 시간 확인용)
+            'debug_timing': False,
             'kp': 1.5, 'cmd_sign': -1.0, 'deadband': 0.05, 'max_speed': 0.9,
             'kp_tilt': 1.2, 'cmd_sign_tilt': 1.0, 'deadband_tilt': 0.05,
             'max_speed_tilt': 0.6, 'tilt_enabled': True,
@@ -63,11 +69,15 @@ class TrackerNode(Node):
             ).value for name, value in defaults.items()
         }
         p = self.settings
-        config_path = p['detector_config'] or str(cube_detector.DEFAULT_CONFIG)
-        self.detector_cfg = cube_detector.load_config(config_path)   # 형식 오류는 여기서 ValueError
+        config_path = p['detector_config'] or str(detector.DEFAULT_CONFIG)
+        self.detector_cfg = detector.load_config(config_path)   # 형식 오류는 여기서 ValueError
         # camera_info가 오기 전에는 설정의 근사 초점거리를 쓴다(640×360 ≈ 460 px)
-        self.fx = self.fy = cube_detector.focal_px(self.detector_cfg)
+        self.fx = self.fy = detector.focal_px(self.detector_cfg)
         self.focal_from_camera = False
+        # 같은 설정 객체를 공유하므로 camera_info로 다시 계산한 크기 기준도 그대로 쓴다
+        self.cube_tracker = CubeTracker(self.detector_cfg)
+        if self.cube_tracker.p['csrt'] and not self.cube_tracker.use_csrt:
+            self.get_logger().warning('OpenCV has no TrackerCSRT; tracking without CSRT bridging.')
         if not 0 < p['stall_timeout'] < float('inf'):
             raise ValueError('stall_timeout must be finite and positive')
         for name in ('kp', 'kp_tilt', 'max_speed', 'max_speed_tilt'):
@@ -123,7 +133,8 @@ class TrackerNode(Node):
         self.get_logger().info(
             f'Detector config {config_path}: HSV {self.detector_cfg["target"]["hsv_ranges"]}, '
             f'min_area {self.detector_cfg["selection"]["min_area"]} px, '
-            f'depth {depth_range_text(self.detector_cfg)}'
+            f'depth {depth_range_text(self.detector_cfg)}, '
+            f'CSRT {"on" if self.cube_tracker.use_csrt else "off"}'
         )
         self.color_subscriber = Subscriber(
             self, Image, 'camera/color/image_raw', qos_profile=image_qos
@@ -133,12 +144,22 @@ class TrackerNode(Node):
             qos_profile=image_qos,
         )
 
-        # xmen_vision stamps both images of a pair with exactly the same time.
+        # realsense_node stamps both images of a pair with exactly the same time.
         self.synchronizer = TimeSynchronizer(
             [self.color_subscriber, self.depth_subscriber], queue_size=5
         )
         
         self.synchronizer.registerCallback(self.on_frames)
+        # 시간 진단: 각 영상의 최신 스탬프와 단계별 개수. use_sim_time인데 /clock이 없으면
+        # 노드 시계 타이머가 멈추므로 진단 타이머는 steady clock으로 돈다.
+        self.timing = {'color': 0, 'depth': 0, 'synced': 0, 'processed': 0, 'stale': 0}
+        self.last_raw_stamp_ns = {'color': None, 'depth': None}
+        self.last_stale_age = None
+        self.color_subscriber.registerCallback(lambda m: self.note_raw('color', m))
+        self.depth_subscriber.registerCallback(lambda m: self.note_raw('depth', m))
+        self.timing_timer = self.create_timer(
+            2.0, self.report_timing, clock=Clock(clock_type=ClockType.STEADY_TIME)
+        )
         self.get_logger().info('Waiting for synchronized RGB and aligned depth images.')
 
     def on_camera_info(self, message):
@@ -147,7 +168,7 @@ class TrackerNode(Node):
         if self.focal_from_camera or not (fx > 0 and fy > 0):
             return
         self.fx, self.fy = float(fx), float(fy)
-        cube_detector.set_focal(self.detector_cfg, self.fx, message.width or 640)
+        detector.set_focal(self.detector_cfg, self.fx, message.width or 640)
         self.focal_from_camera = True
         s = self.detector_cfg['selection']
         self.get_logger().info(
@@ -175,10 +196,64 @@ class TrackerNode(Node):
                 throttle_duration_sec=5.0,
             )
 
+    def note_raw(self, name, message):
+        """Record each image stream before synchronization for timing diagnostics."""
+        self.timing[name] += 1
+        stamp = message.header.stamp
+        self.last_raw_stamp_ns[name] = stamp.sec * 1000000000 + stamp.nanosec
+
+    def report_timing(self):
+        """Explain, every 2 s of wall time, where bag or camera frames are being lost."""
+        t, raw = self.timing, self.last_raw_stamp_ns
+        now_ns = self.get_clock().now().nanoseconds
+        sim = self.get_parameter('use_sim_time').value
+        clock = f'use_sim_time={sim}, now={now_ns / 1e9:.3f} s'
+        if self.settings['debug_timing']:
+            ages = ', '.join(
+                f'{k} age {(now_ns - v) / 1e9:+.3f} s' for k, v in raw.items() if v is not None
+            ) or 'no images'
+            self.get_logger().info(
+                f'timing 2 s: color {t["color"]}, depth {t["depth"]}, synced {t["synced"]}, '
+                f'processed {t["processed"]}, stale {t["stale"]}; {ages}; {clock}'
+            )
+        if t['color'] and t['depth'] and not t['synced']:
+            diff_ms = (raw['color'] - raw['depth']) / 1e6
+            self.get_logger().warning(
+                f'Color and depth images arrive but never share an exact stamp '
+                f'(latest color-depth = {diff_ms:+.3f} ms); TimeSynchronizer drops them all.'
+            )
+        if t['stale'] and not t['processed']:
+            if sim and now_ns == 0:
+                hint = 'use_sim_time is true but no /clock yet: play the bag with --clock.'
+            elif sim:
+                hint = 'check that only the bag publishes /clock (ros2 bag play --clock).'
+            else:
+                hint = ('bag stamps are in the past: ros2 bag play <bag> --clock and run '
+                        'tracker_node with -p use_sim_time:=true.')
+            self.get_logger().warning(
+                f'Dropped {t["stale"]} synced pairs as outside max_input_age '
+                f'{self.settings["max_input_age"]} s (latest age {self.last_stale_age:+.3f} s, '
+                f'{clock}); {hint}'
+            )
+        self.timing = dict.fromkeys(t, 0)
+
     def on_frames(self, color_msg, depth_msg):
         """Retain only the newest synchronized pair until the detection timer."""
+        self.timing['synced'] += 1
         stamp = color_msg.header.stamp
         stamp_ns = stamp.sec * 1000000000 + stamp.nanosec
+        # bag을 다시 재생하거나 -l로 반복하면 스탬프가 뒤로 간다 → 이전 상태를 잊고 새로 시작
+        if (self.last_stamp_ns is not None
+                and (self.last_stamp_ns - stamp_ns) / 1e9 > self.settings['stall_timeout']):
+            self.get_logger().warning(
+                f'Image stamp jumped back {(self.last_stamp_ns - stamp_ns) / 1e9:.3f} s '
+                '(bag restart or loop); resetting tracking state.'
+            )
+            self.last_stamp_ns = None
+            self.pending_frames = None
+            self.last_target = None
+            self.last_rx = self.get_clock().now()
+            self.cube_tracker.reset()
         if self.last_stamp_ns is not None and stamp_ns <= self.last_stamp_ns:
             return
         if self.pending_frames is not None:
@@ -201,7 +276,10 @@ class TrackerNode(Node):
             return
         age = (self.get_clock().now().nanoseconds - stamp_ns) / 1e9
         if not 0 <= age <= self.settings['max_input_age']:
+            self.timing['stale'] += 1
+            self.last_stale_age = age
             return
+        self.timing['processed'] += 1
         if (
             color_msg.height != depth_msg.height
             or color_msg.width != depth_msg.width
@@ -234,14 +312,21 @@ class TrackerNode(Node):
         self.latest_frame = (color_msg.header, bgr, depth)
         target = PointStamped()
         target.header = color_msg.header
-        # 색(HSV) → 면적 → 모양(장단비·채움비·solidity·상자 모양) → 뎁스 거리·실제 크기,
-        # 화면 가장자리·앞 물체에 가린 큐브는 그 근거가 있을 때만 완화한다.
-        coordinates, bbox, detection = cube_detector.detect_bgr_depth_m(
-            bgr, depth, self.detector_cfg, self.fx, self.fy
-        )
-        if detection.partial:
-            self.get_logger().debug(f'Partially visible cube ({detection.partial})')
-        target.point.x, target.point.y, target.point.z = coordinates
+        # 영상이 끊겼다 이어지면 큐브 위치가 달라졌을 수 있으므로 추적 대상을 잊고 새로 찾는다
+        if (self.last_stamp_ns is not None
+                and (stamp_ns - self.last_stamp_ns) / 1e9 > self.settings['stall_timeout']):
+            self.cube_tracker.reset()
+        # 색(HSV) → 면적 → 모양 → 뎁스 거리·실제 크기 검출 + 같은 큐브 유지·가림 구간 CSRT 확인
+        depth_frame = (detector.depth_from_meters(depth, self.fx, self.fy)
+                       if detector.depth_cfg(self.detector_cfg) is not None else None)
+        result = self.cube_tracker.step(bgr, depth_frame)
+        coordinates = result.target or (0.0, 0.0, 0.0)
+        bbox = result.bbox_original if result.target else None
+        if result.source == 'csrt' or result.partial:
+            self.get_logger().debug(
+                f'{result.source} target ({result.partial or "full"}), '
+                f'detect {result.detect_ms:.1f} ms, csrt {result.csrt_ms:.1f} ms')
+        target.point.x, target.point.y, target.point.z = (float(v) for v in coordinates)
         self.target_publisher.publish(target)
         box = PolygonStamped()
         box.header = color_msg.header

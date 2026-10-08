@@ -16,6 +16,6 @@ tracker_node:
     deadband_tilt: 0.05
     max_speed_tilt: 0.6   # [rad/s] 중력이 걸리는 축이라 팬보다 낮게
 
-    # 검출: xmen_tracker/cube_detector.py + detector_config(기본 xmen_bringup/param/detector.yaml).
-    # HSV·크기·모양·뎁스 검증·일부만 보이는 큐브 설정은 detector.yaml에서 바꾼다(hardware_launch가 경로를 넘긴다).
+    # 검출: xmen_tracker/detector.py + detector_config(빈 값이면 xmen_tracker/config/detector.yaml).
+    # HSV·크기·모양·뎁스 검증·일부만 보이는 큐브 설정은 detector.yaml에서 바꾼다(hardware_launch의 detector_config 인자로 다른 파일 지정).
     stall_timeout: 0.5

@@ -45,7 +45,7 @@ def _setup(context):
                 }],
             ))
         actions.append(Node(
-            package='xmen_vision', executable='realsense_node', output='screen',
+            package='xmen_tracker', executable='realsense_node', output='screen',
             parameters=[{'use_sim_time': False,
                          'publish_hz': ParameterValue(
                              LaunchConfiguration('image_hz'), value_type=float)}],
@@ -58,7 +58,7 @@ def _setup(context):
                  '--clock', '100', '--delay', '2',
                  '--qos-profile-overrides-path', str(share / 'param/bag_qos.yaml'),
                  '--topics', '/camera/color/image_raw',
-                 '/camera/aligned_depth_to_color/image_raw'],
+                 '/camera/aligned_depth_to_color/image_raw', '/camera/color/camera_info'],
             output='screen',
         ))
     return actions
@@ -73,8 +73,9 @@ def generate_launch_description():
                               description='Bag to play, or empty for externally started playback.'),
         DeclareLaunchArgument('params_file', default_value=str(share / 'param/tracker.yaml'),
                               description='Tracker ROS parameter YAML.'),
-        DeclareLaunchArgument('detector_config', default_value=str(share / 'param/detector.yaml'),
-                              description='Cube detection YAML (HSV, size, shape, depth, partial view).'),
+        DeclareLaunchArgument('detector_config', default_value='',
+                              description='Cube detection YAML (HSV, size, shape, depth, partial view); '
+                                          'empty = xmen_tracker/config/detector.yaml.'),
         DeclareLaunchArgument('start_control', default_value='true', choices=['true', 'false'],
                               description='Start xmen_control/control_lite in live mode (homes once at startup).'),
         DeclareLaunchArgument('control_params_file', default_value=str(share / 'param/control.yaml')),

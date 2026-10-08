@@ -6,8 +6,8 @@ for settling near the boundary. Warnings include the measured angle and limit,
 repeat at most once every 5 seconds, and do not change motion commands. The
 tracker and controller must share the same ROS domain to receive joint feedback.
 
-Tracks the blue target using synchronized RGB and aligned metric depth from
-`xmen_vision`. The worker publishes `/target` and `/tracking/bbox`; a separate
+Captures RealSense color and aligned depth (`realsense_node`) and tracks the blue
+target from them. The worker publishes `/target` and `/tracking/bbox`; a separate
 remote RViz node draws overlays and RViz markers. This package performs
 visual tracking and publishes pan/tilt angular velocities on `/cmd_vel`. A
 separate motor driver handles serial communication and hardware limits.
@@ -15,10 +15,16 @@ separate motor driver handles serial communication and hardware limits.
 From the ROS workspace:
 
 ```bash
-colcon build --packages-select xmen_vision xmen_tracker
+colcon build --packages-select xmen_tracker
 source install/setup.bash
-ros2 run xmen_vision realsense_node
+ros2 run xmen_tracker realsense_node
 ```
+
+`realsense_node` publishes `/camera/color/image_raw` (`bgr8`),
+`/camera/aligned_depth_to_color/image_raw` (`32FC1`, meters; invalid = NaN) and
+`/camera/color/camera_info` (once at startup, transient local). White balance is fixed
+at 4600 K and exposure is automatic to match the detector HSV. See
+[REALSENSE.md](REALSENSE.md) for parameters and camera notes.
 
 In another sourced terminal on the camera PC:
 
@@ -51,18 +57,24 @@ and depth stay on the tracker computer by default. Tracking keeps running if
 the remote RViz node disconnects. Start the camera and worker separately;
 neither requires the RViz node to be running.
 
-Detection uses `xmen_tracker/cube_detector.py` with
-`xmen_bringup/param/detector.yaml` (parameter `detector_config`; `hardware_launch.py`
-passes the installed path). Tune detection in that YAML, not in node parameters:
+Detection uses `xmen_tracker/detector.py` with `config/detector.yaml`
+(parameter `detector_config`; empty = the installed `xmen_tracker/config/detector.yaml`).
+The same file is used by the `tuning` and `evaluate` tools. Tune detection in that YAML,
+not in node parameters:
 
 - **HSV from measured lighting**: dark/normal/bright × 0.15–1.0 m, 1,400 frames
   (cube H 110–113, S 248–255; background blue S ≤ 163 → S ≥ 200, H 104–120).
 - **Real-size check** from aligned depth and the color focal length
-  (`camera/color/camera_info` from `xmen_vision`; config value 460 px until it arrives):
+  (`camera/color/camera_info` from `realsense_node`; config value 460 px until it arrives):
   distance 0.1–1.1 m, short side ≤ 6 cm, long side ≤ 8 cm, 3–30 cm².
+  Closer than the D435 minimum range, depth is missing: a candidate is then accepted
+  from color and shape only when it is at least `depth.no_depth_min_area` (800 px).
 - **Shape checks**: aspect ≤ 3, extent ≥ 0.60, solidity ≥ 0.75 (rejects a blue 3D-printed
   bracket of cube size), and `box_fit` (outline must fit a ≤6-vertex polygon; rejects
   circles, ellipses, rings).
+- **Color split**: a cube held against blue fabric (jeans) merges into one blob; blobs that fail
+  size/shape are re-cut using only fully saturated cube color (`selection.color_split`, S ≥ 240,
+  V ≥ 60) and the pieces are checked again. Candidates that already pass are unaffected.
 - **Partially visible cube**: shape and minimum-area limits are relaxed only when the
   blob is cut by the image border along that border, or a non-blue object in front
   (closer in depth) explains the missing part.
@@ -72,11 +84,59 @@ recorded before `realsense_node` published real BGR data).
 
 ```bash
 ros2 run xmen_tracker tracker_node --ros-args -p detector_config:=/path/to/detector.yaml
+# Tracker-only launch (start realsense_node separately):
+ros2 launch xmen_tracker perception.launch.py detector_config:=/path/to/detector.yaml
 ```
 
-The largest valid candidate is selected each frame, with image-center proximity
-breaking near-equal-area ties. This does not maintain object identity between
-multiple blue objects.
+Bag playback: recorded stamps are in the past, so with the wall clock every pair is older
+than `max_input_age` and dropped. Play the bag with `--clock` and use sim time.
+`debug_timing:=true` logs received/synced/processed/stale counts and stamp ages every 2 s;
+warnings for stale stamps or unmatched color/depth stamps are always on.
+
+```bash
+ros2 bag play <bag_dir> --clock
+ros2 launch xmen_tracker perception.launch.py use_sim_time:=true debug_timing:=true
+```
+
+Tracking (`xmen_tracker/cube_tracker.py`, `tracking:` section of the same YAML) runs
+HSV detection on every frame and keeps the same cube across frames:
+
+- A track starts when the whole cube is detected on `confirm_frames` (2) consecutive
+  frames; the largest candidate (image-center tie-break) is chosen only when searching.
+- While tracking, the candidate near the predicted position and at the tracked depth
+  (`z_gate`) is kept, so another blue object or something passing in front is ignored.
+- When detection misses (occlusion), CSRT is started from the last confirmed frame and its
+  box is verified on the current frame (target-color pixels and depth). The published point
+  is always measured on the current frame; previous coordinates are never reused.
+- Color uniformity (`min_fill`, `min_v`, `min_s`: the cube face is solid and fully saturated)
+  rejects textured dark-blue fabric such as jeans, for detections and for CSRT boxes.
+- Color-split pieces must have at least `color_split.min_area_m2` (8 cm²), so small
+  same-color print fragments are not taken for a cube.
+- CSRT alone may bridge at most `max_bridge` frames. While the tracked cube is unconfirmed,
+  a whole cube seen elsewhere on `confirm_frames` consecutive frames takes over.
+- `tracking.csrt: false` keeps tracking and the uniformity check without CSRT; if OpenCV has
+  no `TrackerCSRT`, the node logs a warning and does the same.
+
+Measured on recordings (PC): simulated occlusion/distractor recognition 49% → 92%,
+switches to another object 120 → 0. On five live recordings (4,633 frames), wrong or
+suspicious outputs fell from 297 (detector alone) to 14; on review, the only real errors
+were 3 frames on a same-blue shirt print while the camera moved. Processing p95 about
+6–7 ms, max 10 ms (CSRT runs only on missed frames with `template_size` 48).
+A printed or painted surface of the same blue and cube size cannot be told apart by color,
+shape, size or depth; keep such clothing out of view where possible.
+
+Tuning and evaluation are available in this package:
+
+```bash
+ros2 run xmen_tracker tuning tune --camera
+ros2 run xmen_tracker evaluate --sim --out /tmp/xmen-evaluation
+```
+
+Stop `realsense_node` before tools using `--camera`, which open the device
+directly. Camera exposure settings in detector YAML apply to these direct-camera
+tools; `realsense_node` applies the same white balance through its own parameters.
+Offline scores are not an end-to-end tracker benchmark.
+See [PERCEPTION.md](PERCEPTION.md) for data collection and filter tuning.
 
 Local tracking input subscriptions use reliable, volatile, keep-last QoS with depth 5
 and an exact-time synchronization queue of 5 pairs:
