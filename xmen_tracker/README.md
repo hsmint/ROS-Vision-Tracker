@@ -72,6 +72,9 @@ not in node parameters:
 - **Shape checks**: aspect ≤ 3, extent ≥ 0.60, solidity ≥ 0.75 (rejects a blue 3D-printed
   bracket of cube size), and `box_fit` (outline must fit a ≤6-vertex polygon; rejects
   circles, ellipses, rings).
+- **Color split**: a cube held against blue fabric (jeans) merges into one blob; blobs that fail
+  size/shape are re-cut using only fully saturated cube color (`selection.color_split`, S ≥ 240,
+  V ≥ 60) and the pieces are checked again. Candidates that already pass are unaffected.
 - **Partially visible cube**: shape and minimum-area limits are relaxed only when the
   blob is cut by the image border along that border, or a non-blue object in front
   (closer in depth) explains the missing part.
@@ -85,9 +88,32 @@ ros2 run xmen_tracker tracker_node --ros-args -p detector_config:=/path/to/detec
 ros2 launch xmen_tracker perception.launch.py detector_config:=/path/to/detector.yaml
 ```
 
-The largest valid candidate is selected each frame, with image-center proximity
-breaking near-equal-area ties. This does not maintain object identity between
-multiple blue objects.
+Tracking (`xmen_tracker/cube_tracker.py`, `tracking:` section of the same YAML) runs
+HSV detection on every frame and keeps the same cube across frames:
+
+- A track starts when the whole cube is detected on `confirm_frames` (2) consecutive
+  frames; the largest candidate (image-center tie-break) is chosen only when searching.
+- While tracking, the candidate near the predicted position and at the tracked depth
+  (`z_gate`) is kept, so another blue object or something passing in front is ignored.
+- When detection misses (occlusion), CSRT is started from the last confirmed frame and its
+  box is verified on the current frame (target-color pixels and depth). The published point
+  is always measured on the current frame; previous coordinates are never reused.
+- Color uniformity (`min_fill`, `min_v`, `min_s`: the cube face is solid and fully saturated)
+  rejects textured dark-blue fabric such as jeans, for detections and for CSRT boxes.
+- Color-split pieces must have at least `color_split.min_area_m2` (8 cm²), so small
+  same-color print fragments are not taken for a cube.
+- CSRT alone may bridge at most `max_bridge` frames. While the tracked cube is unconfirmed,
+  a whole cube seen elsewhere on `confirm_frames` consecutive frames takes over.
+- `tracking.csrt: false` keeps tracking and the uniformity check without CSRT; if OpenCV has
+  no `TrackerCSRT`, the node logs a warning and does the same.
+
+Measured on recordings (PC): simulated occlusion/distractor recognition 49% → 92%,
+switches to another object 120 → 0. On five live recordings (4,633 frames), wrong or
+suspicious outputs fell from 297 (detector alone) to 14; on review, the only real errors
+were 3 frames on a same-blue shirt print while the camera moved. Processing p95 about
+6–7 ms, max 10 ms (CSRT runs only on missed frames with `template_size` 48).
+A printed or painted surface of the same blue and cube size cannot be told apart by color,
+shape, size or depth; keep such clothing out of view where possible.
 
 Tuning and evaluation are available in this package:
 

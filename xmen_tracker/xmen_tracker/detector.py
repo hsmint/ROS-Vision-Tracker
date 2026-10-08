@@ -252,13 +252,22 @@ def color_mask(frame, cfg):
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=p['close_iterations'])
 
 
+def contour_roi(contour, shape, pad):
+    """컨투어 외접 사각형을 pad만큼 넓혀 영상 안으로 자른 (x0, y0, x1, y1).
+    후보마다 영상 전체 크기의 마스크·뎁스 변환을 만들지 않으려고 쓴다(후보가 많을수록 처리 시간이 튀었다)."""
+    x, y, w, h = cv2.boundingRect(contour)
+    H, W = shape[:2]
+    return max(0, x - pad), max(0, y - pad), min(W, x + w + pad), min(H, y + h + pad)
+
+
 def contour_depth(contour, depth, d):
     """컨투어 안 뎁스 중앙값(m). 유효 픽셀 비율이 min_valid_ratio 미만이면 None.
     경계 픽셀은 배경 뎁스가 섞이므로 침식해서 뺀다. 1 m의 작은 목표는 침식 후 남는 게 없으면 침식 전을 쓴다."""
-    m = np.zeros(depth.data.shape, np.uint8)
-    cv2.drawContours(m, [contour], -1, 255, -1)
+    x0, y0, x1, y1 = contour_roi(contour, depth.data.shape, 1)
+    m = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    cv2.drawContours(m, [contour], -1, 255, -1, offset=(-x0, -y0))
     inner = cv2.erode(m, np.ones((3, 3), np.uint8), iterations=d['erode'])
-    z = depth.data[(inner if inner.any() else m) > 0]
+    z = depth.data[y0:y1, x0:x1][(inner if inner.any() else m) > 0]
     valid = z[np.isfinite(z) & (z > 0)]
     if len(z) == 0 or len(valid) < d['min_valid_ratio'] * len(z):
         return None
@@ -333,14 +342,19 @@ def front_occlusion(contour, depth, z, p, occluder_ok=None):
     - 둘레: 컨투어 바로 바깥 ring_px 픽셀. 곧게 잘린 가림(가로지른 손가락)은 오목부가 없어 둘레로 본다.
     '앞' = 큐브 Z보다 max(front_margin_m, Z×front_margin_ratio) 이상 가까운 유효 뎁스.
     occluder_ok: 가린 물체로 인정할 픽셀(파란 계열이 아닌 곳). None이면 모든 픽셀."""
-    m = np.zeros(depth.data.shape, np.uint8)
-    cv2.drawContours(m, [contour], -1, 255, -1)
+    ring_px = p.get('ring_px', 4)
+    x0, y0, x1, y1 = contour_roi(contour, depth.data.shape, ring_px + 2)   # 둘레(ring_px)까지 담는 영역만
+    off = (-x0, -y0)
+    m = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    cv2.drawContours(m, [contour], -1, 255, -1, offset=off)
     hm = np.zeros_like(m)
-    cv2.drawContours(hm, [cv2.convexHull(contour)], -1, 255, -1)
+    cv2.drawContours(hm, [cv2.convexHull(contour)], -1, 255, -1, offset=off)
     k = np.ones((3, 3), np.uint8)
     deficit = (hm > 0) & (cv2.dilate(m, k) == 0)                 # 경계 1픽셀은 빼고
-    ring = (cv2.dilate(m, k, iterations=p.get('ring_px', 4)) > 0) & (m == 0)
-    zz = depth.data.astype(np.float32) * depth.scale
+    ring = (cv2.dilate(m, k, iterations=ring_px) > 0) & (m == 0)
+    zz = depth.data[y0:y1, x0:x1].astype(np.float32) * depth.scale
+    if occluder_ok is not None:
+        occluder_ok = occluder_ok[y0:y1, x0:x1]
     margin = max(p.get('front_margin_m', 0.01), p.get('front_margin_ratio', 0.015) * z)
     if occluder_ok is not None:
         # 같은 파란 계열(청바지 주름 등 같은 물체의 다른 부분)은 가린 물체로 치지 않는다.
@@ -442,10 +456,12 @@ def split_by_depth(contour, depth, d, z=None):
     기울어진 카드처럼 거리가 매끄럽게 변하는 한 물체는 나뉘지 않는다(일정 두께로 자르면
     큰 물체가 목표 크기의 띠로 쪼개져 오검출된다). 같은 거리에 나란히 붙은 물체는 나뉘지 않는다.
     """
-    m = np.zeros(depth.data.shape, np.uint8)
-    cv2.drawContours(m, [contour], -1, 255, -1)
     if z is None:   # 점 잡음이 경계로 잡히지 않게 5×5 중앙값(프레임마다 한 번 계산해 넘겨받을 수 있다)
         z = cv2.medianBlur(depth.data, 5).astype(np.float32) * depth.scale
+    x0, y0, x1, y1 = contour_roi(contour, z.shape, 2)          # 3×3 팽창·침식이 닿는 범위까지만
+    z = z[y0:y1, x0:x1]
+    m = np.zeros(z.shape, np.uint8)
+    cv2.drawContours(m, [contour], -1, 255, -1, offset=(-x0, -y0))
     valid = z > 0
     if valid[m > 0].mean() < d.get('split_min_valid', 0.6):
         return []   # 뎁스가 대부분 비면 측정 실패 영역이 경계처럼 보여 물체 일부가 목표 크기로 잘린다
@@ -456,9 +472,24 @@ def split_by_depth(contour, depth, d, z=None):
     edge = (z_hi - z_lo) > jump
     keep = ((m > 0) & valid & ~edge).astype(np.uint8) * 255
     keep = cv2.morphologyEx(keep, cv2.MORPH_OPEN, k)
-    found, _ = cv2.findContours(keep, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    found, _ = cv2.findContours(keep, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=(x0, y0))
     pieces = [c for c in found if cv2.contourArea(c) >= d['min_area_px']]
     return pieces if len(pieces) > 1 else []   # 안 나뉘었으면 원래 판정(size_mismatch) 유지
+
+
+def split_by_color(contour, hsv, cs, min_area):
+    """같은 계열 색 물체(청바지 등)와 붙어 한 덩어리가 된 큐브를 '진한 큐브색'으로 다시 잘라낸다. 반환: 조각 목록.
+
+    큐브 면은 채도·밝기가 높고 고르다(S 246~255). 청바지 같은 천은 hsv_ranges 안에 들어와도 채도가 낮다
+    (S 중앙값 204~222). 덩어리 안에서 cs['lower']~cs['upper'] 픽셀만 남겨 열기(open)로 잔점을 지우고 나눈다.
+    """
+    x0, y0, x1, y1 = contour_roi(contour, hsv.shape, 1)
+    m = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    cv2.drawContours(m, [contour], -1, 255, -1, offset=(-x0, -y0))
+    core = cv2.inRange(hsv[y0:y1, x0:x1], tuple(cs['lower']), tuple(cs['upper']))
+    core = cv2.morphologyEx(cv2.bitwise_and(core, m), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    found, _ = cv2.findContours(core, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=(x0, y0))
+    return [c for c in found if cv2.contourArea(c) >= min_area]
 
 
 def select(accepted, image_center, tie_ratio):
@@ -506,6 +537,28 @@ def detect(frame, cfg, scale=(1.0, 1.0), depth=None):
                 cand = evaluate(piece, w * h, cfg['selection'], depth, d, (w, h), occluder_ok)
                 cand.split = True
                 candidates.append(cand)
+    cs = cfg['selection'].get('color_split') or {}
+    if cs.get('enabled'):
+        # 깊이로도 안 나뉜(같은 거리에 붙은) 덩어리: 진한 큐브색만으로 다시 나눈다(손에 든 큐브 + 청바지 등).
+        # 원래 통과한 후보는 건드리지 않고, 탈락한 큰 덩어리에서 나온 조각만 같은 검사로 다시 판정한다.
+        split_reasons = ('size_mismatch', 'bad_aspect', 'low_extent', 'low_solidity', 'not_box')
+        floor = (d['min_area_px'] if d is not None and depth is not None else cfg['selection']['min_area'])
+        parents = [c for c in candidates if not c.accepted and c.reason in split_reasons and c.area >= 2 * floor
+                   and not c.split]
+        if parents:
+            hsv_full = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            for parent in parents:
+                pieces = split_by_color(parent.contour, hsv_full, cs, floor)
+                if len(pieces) == 1 and cv2.contourArea(pieces[0]) >= 0.9 * parent.area:
+                    continue                                   # 덩어리 전체가 진한 색 = 나뉜 것이 없음
+                for piece in pieces:
+                    cand = evaluate(piece, w * h, cfg['selection'], depth, d, (w, h), occluder_ok)
+                    cand.split = True
+                    # 잘라낸 조각은 '천에서 분리된 큐브 전체'여야 한다. 큐브의 가장 작은 면(3×3 cm)보다 작으면
+                    # 같은 색 무늬(옷의 프린트 글자 등) 조각으로 보고 버린다(run5: 프린트 조각 3~6 cm², 큐브 약 20 cm²)
+                    if cand.accepted and cand.area_m2 is not None and cand.area_m2 < cs.get('min_area_m2', 0.0):
+                        cand.accepted, cand.reason = False, 'split_small'
+                    candidates.append(cand)
     accepted = [c for c in candidates if c.accepted]
     best = select(accepted, image_center, cfg['selection']['tie_ratio'])
     if best is None:
@@ -612,16 +665,25 @@ def detect_bgr_depth_m(bgr, depth_m, cfg, fx, fy):
     bgr: H×W×3 uint8(BGR), depth_m: 컬러에 정렬된 H×W float 뎁스[m](측정 실패 = NaN 또는 0), fx·fy: 컬러 초점거리[px].
     반환 ((ex, ey, area_ratio), bbox, Detection). 미검출이면 ((0, 0, 0), None, Detection).
     bbox는 입력 영상 좌표 (left, top, width, height)."""
-    depth = None
-    if depth_m is not None and depth_cfg(cfg) is not None:
-        mm = np.nan_to_num(np.asarray(depth_m, np.float32) * 1000.0, nan=0.0, posinf=0.0, neginf=0.0)
-        depth = DepthFrame(np.clip(mm, 0, 65535).astype(np.uint16), 0.001, float(fx), float(fy))
+    depth = depth_from_meters(depth_m, fx, fy) if depth_cfg(cfg) is not None else None
     frame, g = preprocess(bgr, cfg)
     det, _ = detect(frame, cfg, g, preprocess_depth(depth, g))
     if not det.detected:
         return (0.0, 0.0, 0.0), None, det
-    x, y, w, h = det.bbox                      # 처리 영상 좌표 → 입력 영상 좌표
-    x0, y0 = to_original((x, y), g)
-    x1, y1 = to_original((x + w - 1, y + h - 1), g)
-    bbox = (int(round(x0)), int(round(y0)), int(round(x1 - x0)) + 1, int(round(y1 - y0)) + 1)
-    return (float(det.error[0]), float(det.error[1]), float(det.area_ratio)), bbox, det
+    return (float(det.error[0]), float(det.error[1]), float(det.area_ratio)), bbox_to_original(det.bbox, g), det
+
+
+def depth_from_meters(depth_m, fx, fy):
+    """ROS 32FC1 뎁스[m](측정 실패 = NaN 또는 0) → DepthFrame(uint16 mm). depth_m이 None이면 None."""
+    if depth_m is None:
+        return None
+    mm = np.nan_to_num(np.asarray(depth_m, np.float32) * 1000.0, nan=0.0, posinf=0.0, neginf=0.0)
+    return DepthFrame(np.clip(mm, 0, 65535).astype(np.uint16), 0.001, float(fx), float(fy))
+
+
+def bbox_to_original(bbox, scale):
+    """처리 영상 좌표 (x, y, w, h) → 입력 영상 좌표 (left, top, width, height)."""
+    x, y, w, h = bbox
+    x0, y0 = to_original((x, y), scale)
+    x1, y1 = to_original((x + w - 1, y + h - 1), scale)
+    return int(round(x0)), int(round(y0)), int(round(x1 - x0)) + 1, int(round(y1 - y0)) + 1

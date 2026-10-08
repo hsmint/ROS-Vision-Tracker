@@ -2,6 +2,8 @@
 
 Detection uses xmen_tracker.detector with xmen_tracker/config/detector.yaml
 (measured-lighting HSV, real-size check, box-shape check, partially visible cube).
+xmen_tracker.cube_tracker keeps the same cube across frames and bridges frames the
+detector misses (occlusion) with CSRT, verified on the current frame (tracking section).
 """
 
 import math
@@ -18,6 +20,7 @@ from sensor_msgs.msg import CameraInfo, Image, JointState
 from std_msgs.msg import String
 
 from xmen_tracker import detector
+from xmen_tracker.cube_tracker import CubeTracker
 
 JOINT_LIMITS_DEG = {'pan': (-180.0, 180.0), 'tilt': (-120.0, 120.0)}
 # Match control_lite's eight encoder ticks of position tolerance.
@@ -68,6 +71,10 @@ class TrackerNode(Node):
         # camera_info가 오기 전에는 설정의 근사 초점거리를 쓴다(640×360 ≈ 460 px)
         self.fx = self.fy = detector.focal_px(self.detector_cfg)
         self.focal_from_camera = False
+        # 같은 설정 객체를 공유하므로 camera_info로 다시 계산한 크기 기준도 그대로 쓴다
+        self.cube_tracker = CubeTracker(self.detector_cfg)
+        if self.cube_tracker.p['csrt'] and not self.cube_tracker.use_csrt:
+            self.get_logger().warning('OpenCV has no TrackerCSRT; tracking without CSRT bridging.')
         if not 0 < p['stall_timeout'] < float('inf'):
             raise ValueError('stall_timeout must be finite and positive')
         for name in ('kp', 'kp_tilt', 'max_speed', 'max_speed_tilt'):
@@ -123,7 +130,8 @@ class TrackerNode(Node):
         self.get_logger().info(
             f'Detector config {config_path}: HSV {self.detector_cfg["target"]["hsv_ranges"]}, '
             f'min_area {self.detector_cfg["selection"]["min_area"]} px, '
-            f'depth {depth_range_text(self.detector_cfg)}'
+            f'depth {depth_range_text(self.detector_cfg)}, '
+            f'CSRT {"on" if self.cube_tracker.use_csrt else "off"}'
         )
         self.color_subscriber = Subscriber(
             self, Image, 'camera/color/image_raw', qos_profile=image_qos
@@ -234,14 +242,21 @@ class TrackerNode(Node):
         self.latest_frame = (color_msg.header, bgr, depth)
         target = PointStamped()
         target.header = color_msg.header
-        # 색(HSV) → 면적 → 모양(장단비·채움비·solidity·상자 모양) → 뎁스 거리·실제 크기,
-        # 화면 가장자리·앞 물체에 가린 큐브는 그 근거가 있을 때만 완화한다.
-        coordinates, bbox, detection = detector.detect_bgr_depth_m(
-            bgr, depth, self.detector_cfg, self.fx, self.fy
-        )
-        if detection.partial:
-            self.get_logger().debug(f'Partially visible cube ({detection.partial})')
-        target.point.x, target.point.y, target.point.z = coordinates
+        # 영상이 끊겼다 이어지면 큐브 위치가 달라졌을 수 있으므로 추적 대상을 잊고 새로 찾는다
+        if (self.last_stamp_ns is not None
+                and (stamp_ns - self.last_stamp_ns) / 1e9 > self.settings['stall_timeout']):
+            self.cube_tracker.reset()
+        # 색(HSV) → 면적 → 모양 → 뎁스 거리·실제 크기 검출 + 같은 큐브 유지·가림 구간 CSRT 확인
+        depth_frame = (detector.depth_from_meters(depth, self.fx, self.fy)
+                       if detector.depth_cfg(self.detector_cfg) is not None else None)
+        result = self.cube_tracker.step(bgr, depth_frame)
+        coordinates = result.target or (0.0, 0.0, 0.0)
+        bbox = result.bbox_original if result.target else None
+        if result.source == 'csrt' or result.partial:
+            self.get_logger().debug(
+                f'{result.source} target ({result.partial or "full"}), '
+                f'detect {result.detect_ms:.1f} ms, csrt {result.csrt_ms:.1f} ms')
+        target.point.x, target.point.y, target.point.z = (float(v) for v in coordinates)
         self.target_publisher.publish(target)
         box = PolygonStamped()
         box.header = color_msg.header

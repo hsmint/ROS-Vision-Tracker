@@ -1,17 +1,7 @@
-"""CSRT 추적 + HSV·뎁스 검출 결합 — 독립 시험 도구(ROS 노드 아님).
+"""HSV 검출 + CSRT 결합 추적 시험 도구(ROS 노드 아님).
 
-검출(xmen_tracker/detector.py)은 매 프레임 돌리고, CSRT는 '같은 큐브를 계속 따라가는 것'과
-'검출이 잠깐 놓친 프레임(가림 등)을 현재 프레임 증거로 메우는 것'에만 쓴다.
-
-  추적 시작   검출기가 큐브 '전체'(partial 아님)를 confirm_frames 연속으로 같은 곳에서 잡으면 CSRT 시작.
-              처음부터 일부만 보이는 물체(손에 쥔 같은 색 부품 등)로는 추적을 시작하지 않는다.
-  추적 중     CSRT 상자와 겹치는 검출 후보를 목표로 고른다(다른 곳의 같은 색 물체는 무시).
-              reinit_every 프레임마다, 또는 CSRT 상자와 검출이 어긋나면 검출 상자로 CSRT를 다시 맞춘다.
-  검출 놓침   CSRT 상자 안을 '현재 프레임'에서 확인한다: 상자 안 목표색 픽셀 ≥ 마지막으로 잰 큐브 넓이 × verify_area,
-              그 픽셀들의 뎁스 중앙값이 추적 거리 ± max(3 cm, 10%). 통과하면 출력 중심 = 상자 안 목표색 픽셀의
-              중심(현재 측정값). CSRT 예측 위치나 이전 좌표를 그대로 내보내지 않는다.
-  확인 실패   그 프레임은 즉시 미검출(None). '어느 물체를 따라가는지'만 hold_frames(1 s) 동안 유지해,
-              다시 보이면 CSRT 상자나 마지막 위치 근처의 후보를 이어받는다(더 큰 같은 색 물체로 갈아타지 않음).
+추적 로직은 xmen_tracker/cube_tracker.py(tracker_node와 같은 코드)이고 설정은 detector.yaml의 tracking 절.
+이 도구는 같은 로직을 모의 영상·저장 데이터·RealSense 실시간으로 돌려 '검출기만'(기존 방식)과 비교하고 기록한다.
 
 실행
   python3 tools/csrt_track.py --demo                  # 모의 영상으로 검출기만 vs 결합 비교(움직임·가림·같은 색 큐브)
@@ -33,7 +23,6 @@ import queue
 import threading
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -42,231 +31,31 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from xmen_tracker import detector  # noqa: E402
+from xmen_tracker.cube_tracker import CubeTracker, Output  # noqa: E402
 
 DEFAULT_CONFIG = HERE.parent / 'config' / 'detector.yaml'
 
 
-def iou(a, b):
-    ax, ay, aw, ah = a
-    bx, by, bw, bh = b
-    x0, y0, x1, y1 = max(ax, bx), max(ay, by), min(ax + aw, bx + bw), min(ay + ah, by + bh)
-    inter = max(0, x1 - x0) * max(0, y1 - y0)
-    union = aw * ah + bw * bh - inter
-    return inter / union if union > 0 else 0.0
+class DetectorOnly:
+    """비교 기준: 매 프레임 검출기 선택 결과만(추적·CSRT·균일성 검사 없음) — 기존 tracker_node 방식."""
 
+    def __init__(self, cfg):
+        self.cfg = cfg
 
-@dataclass
-class Output:
-    state: str                 # SEARCH | CONFIRM | TRACK
-    target: tuple = None       # (ex, ey, area_ratio) — 현재 프레임 측정값. 미검출이면 None
-    bbox: tuple = None         # (x, y, w, h) 처리 영상 좌표
-    source: str = None         # 'detector' | 'csrt'(검출이 놓친 프레임을 CSRT 상자 + 현재 프레임 확인으로 메움)
-    depth_m: float = None
-    csrt_ms: float = 0.0
-    detect_ms: float = 0.0
-
-
-class CubeTracker:
-    """검출 + CSRT. 상태는 '어느 물체를 따라가는가'만 갖고, 좌표는 항상 현재 프레임에서 잰다."""
-
-    def __init__(self, cfg, fx, fy, use_csrt=True, confirm_frames=2, reinit_every=10, assoc_iou=0.2,
-                 verify_area=0.15, hold_frames=30, assoc_dist=1.5, require_full_view=True,
-                 min_fill=0.90, min_v=30, z_gate=0.15):
-        self.cfg, self.fx, self.fy = cfg, fx, fy
-        # 균일성 검사(라이브 기록 run2: 청바지 오검출 57건 중 53건 제거, 실측 큐브는 fill≈1.0·V≥38):
-        #   min_fill  컨투어 안 픽셀 중 목표색(형태학 처리 전) 비율 — 데님은 직조 무늬로 듬성듬성(중앙값 0.87)
-        #   min_v     목표색 픽셀 밝기 중앙값 — 그늘진 데님 V≈20, 데이터셋에서 가장 어두운 큐브(dark_0.1m) V≈41
-        # z_gate      추적 중 연결할 후보의 깊이 허용폭(추적 거리 × 비율, 최소 5 cm, 놓친 프레임마다 +2 cm)
-        self.min_fill, self.min_v, self.z_gate = min_fill, min_v, z_gate
-        d = cfg.get('depth', {})
-        self.z_range = (d.get('min_m', 0.1), d.get('max_m', 1.1))
-        self.use_csrt = use_csrt
-        self.confirm_frames, self.reinit_every, self.assoc_iou = confirm_frames, reinit_every, assoc_iou
-        self.verify_area, self.hold_frames, self.assoc_dist = verify_area, hold_frames, assoc_dist
-        self.require_full_view = require_full_view
-        self.reset()
-
-    def reset(self):
-        self.state, self.tracker, self.track_box, self.track_z = 'SEARCH', None, None, None
-        self.confirm, self.lost, self.since_init, self.track_area = 0, 0, 0, None
-
-    # ---------- 측정 ----------
-    def _measure(self, frame, cand, scale):
-        """검출 후보 → (ex, ey, 면적비), bbox. 중심은 detector와 같은 볼록껍질 중심."""
-        co = detector.to_original(cand.center, scale)
-        g = detector.as_geometry(scale)
-        h, w = frame.shape[:2]
-        fs = (g.W, g.H) if g.W else (w, h)
-        ex, ey = detector.normalized_error(co, fs)
-        return (ex, ey, cand.area / (g.sx * g.sy) / (fs[0] * fs[1])), cv2.boundingRect(cand.contour)
-
-    def _verify_box(self, frame, mask, depth, box, scale):
-        """CSRT 상자를 현재 프레임에서 확인. 통과하면 (target, bbox, z) — 상자 안 목표색 픽셀로 잰 값."""
-        H, W = mask.shape
-        x, y, w, h = (int(round(v)) for v in box)
-        x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
-        if x1 - x0 < 3 or y1 - y0 < 3:
-            return None
-        roi = mask[y0:y1, x0:x1] > 0
-        need = max(15, self.verify_area * (self.track_area or 0))
-        if roi.sum() < need:                          # 큐브가 거의 안 보임(가림이 너무 큼)
-            return None
-        z = None
-        if depth is not None:
-            dz = depth.data[y0:y1, x0:x1][roi]
-            dz = dz[dz > 0]
-            if len(dz) >= 10:
-                z = float(np.median(dz)) * depth.scale
-                if not self.z_range[0] <= z <= self.z_range[1]:
-                    return None                      # 검출기와 같은 거리 범위(0.1~1.1 m) 밖
-                if self.track_z is not None and abs(z - self.track_z) > max(0.03, 0.10 * self.track_z):
-                    return None                      # 다른 거리의 물체(앞을 지나간 손 등)
-            elif self.track_z is not None:
-                # 목표색 픽셀에 뎁스가 없을 때(어두운 큐브·원거리에서 흔함): 상자 전체 뎁스로 확인한다.
-                # 상자 대부분이 측정되는데 추적 거리와 다르면 CSRT가 다른 물체(가까운 청바지 등)로 옮겨 간 것.
-                # 상자 전체도 뎁스가 거의 없으면 판단 근거가 없으므로 색 확인만으로 둔다.
-                db = depth.data[y0:y1, x0:x1]
-                valid = db[db > 0]
-                if len(valid) >= 0.5 * db.size:
-                    zb = float(np.median(valid)) * depth.scale
-                    if abs(zb - self.track_z) > max(0.03, 0.10 * self.track_z):
-                        return None
-        ys, xs = np.nonzero(roi)
-        cx, cy = xs.mean() + x0, ys.mean() + y0
-        g = detector.as_geometry(scale)
-        fs = (g.W, g.H) if g.W else (W, H)
-        ex, ey = detector.normalized_error(detector.to_original((cx, cy), scale), fs)
-        return (ex, ey, len(xs) / (g.sx * g.sy) / (fs[0] * fs[1])), (x0, y0, x1 - x0, y1 - y0), z
-
-    # ---------- 한 프레임 ----------
     def step(self, raw_bgr, depth=None):
         t0 = time.perf_counter()
-        frame, scale = detector.preprocess(raw_bgr, self.cfg)
-        dproc = detector.preprocess_depth(depth, scale)
-        det, mask = detector.detect(frame, self.cfg, scale, dproc)
-        accepted = [c for c in det.candidates if c.accepted]
-        if self.use_csrt and accepted and (self.min_fill or self.min_v):
-            accepted = self._uniform(frame, accepted)
-            if det.selected is not None and not any(c is det.selected for c in accepted):
-                # 검출기가 고른 후보가 균일성 검사에서 빠짐 → 남은 것 중 가장 큰 것(검출기 선택 규칙과 같게 면적 기준)
-                det.selected = max(accepted, key=lambda c: c.area) if accepted else None
-                det.detected = det.selected is not None
-                det.partial = getattr(det.selected, 'partial', None)
-                det.depth_m = getattr(det.selected, 'depth_m', None)
-        detect_ms = (time.perf_counter() - t0) * 1000
-        csrt_ms = 0.0
-
-        if not self.use_csrt:                        # 비교용: 검출기만
-            if not det.detected:
-                return Output('SEARCH', detect_ms=detect_ms)
-            tgt, bb = self._measure(raw_bgr, det.selected, scale)
-            return Output('SEARCH', tgt, bb, 'detector', det.depth_m, detect_ms=detect_ms)
-
-        if self.state == 'TRACK':
-            t1 = time.perf_counter()
-            ok, box = self.tracker.update(self._small(frame))
-            csrt_ms = (time.perf_counter() - t1) * 1000
-            box = tuple(v / self.csrt_scale for v in box) if ok else self.track_box
-            # 1) CSRT 상자와 겹치거나 마지막 위치 근처의 검출 후보 = 같은 큐브
-            best = self._associate(accepted, box)
-            if best is not None:
-                tgt, bb = self._measure(raw_bgr, best, scale)
-                self.lost, self.since_init = 0, self.since_init + 1
-                if best.depth_m is not None:
-                    self.track_z = best.depth_m
-                if best.partial is None:
-                    self.track_area = best.area
-                if self.since_init >= self.reinit_every or iou(bb, box) < 0.5:
-                    self._init(frame, bb)               # 흘러감 방지: 검출 상자로 다시 맞춘다
-                self.track_box = bb
-                return Output('TRACK', tgt, bb, 'detector', best.depth_m, csrt_ms, detect_ms)
-            # 2) 검출이 놓침 → CSRT 상자를 현재 프레임에서 확인
-            v = self._verify_box(frame, mask, dproc, box, scale) if ok else None
-            if v is not None:
-                tgt, bb, z = v
-                self.lost, self.track_box = 0, bb
-                return Output('TRACK', tgt, bb, 'csrt', z, csrt_ms, detect_ms)
-            self.lost += 1
-            if self.lost >= self.hold_frames:
-                self.reset()                                # 1 s 동안 다시 확인 못 함 → 대상 잊음
-            return Output(self.state, csrt_ms=csrt_ms, detect_ms=detect_ms)   # 미검출: 이전 좌표 안 씀
-
-        # SEARCH / CONFIRM: 검출기 결과를 그대로 내되, 큐브 '전체'가 연속으로 보일 때만 추적을 시작
+        frame, g = detector.preprocess(raw_bgr, self.cfg)
+        det, _ = detector.detect(frame, self.cfg, g, detector.preprocess_depth(depth, g))
+        ms = (time.perf_counter() - t0) * 1000
         if not det.detected:
-            self.confirm = 0
-            self.state = 'SEARCH'
-            return Output('SEARCH', detect_ms=detect_ms)
-        tgt, bb = self._measure(raw_bgr, det.selected, scale)
-        full = det.partial is None or not self.require_full_view
-        if full and self.track_box is not None and iou(bb, self.track_box) >= self.assoc_iou:
-            self.confirm += 1
-        else:
-            self.confirm = 1 if full else 0
-        self.track_box = bb
-        if self.confirm >= self.confirm_frames:
-            self.track_z, self.track_area = det.depth_m, det.selected.area
-            self._init(frame, bb)
-            self.state = 'TRACK'
-        else:
-            self.state = 'CONFIRM' if self.confirm else 'SEARCH'
-        if det.partial and self.require_full_view:
-            return Output(self.state, detect_ms=detect_ms)      # 일부만 보이는 새 물체는 목표로 내지 않음
-        return Output(self.state, tgt, bb, 'detector', det.depth_m, detect_ms=detect_ms)
+            return Output('SEARCH', detect_ms=ms)
+        return Output('SEARCH', (*det.error, det.area_ratio), det.bbox, detector.bbox_to_original(det.bbox, g),
+                      'detector', det.depth_m, det.partial, detect_ms=ms)
 
-    def _associate(self, accepted, box):
-        """추적 중인 큐브와 같은 후보: CSRT 상자와 IoU ≥ assoc_iou, 또는 마지막 확인 위치에서
-        (상자 장변 × assoc_dist) 안. 여럿이면 IoU가 크고 가까운 것."""
-        lx, ly, lw, lh = self.track_box
-        lc, reach = (lx + lw / 2, ly + lh / 2), self.assoc_dist * max(lw, lh)
-        best, key = None, None
-        tol = None
-        if self.track_z is not None:
-            tol = max(0.05, self.z_gate * self.track_z) + 0.02 * self.lost
-        for c in accepted:
-            if tol is not None and c.depth_m is not None and abs(c.depth_m - self.track_z) > tol:
-                continue                                 # 같은 자리라도 거리가 크게 다르면 앞을 지나간 다른 물체
-            bb = cv2.boundingRect(c.contour)
-            o = iou(bb, box)
-            d = np.hypot(bb[0] + bb[2] / 2 - lc[0], bb[1] + bb[3] / 2 - lc[1])
-            if o >= self.assoc_iou or d <= reach:
-                k = (o, -d)
-                if key is None or k > key:
-                    best, key = c, k
-        return best
 
-    def _uniform(self, frame, cands):
-        """큐브 면은 색이 고르다: 컨투어 안 목표색 비율 ≥ min_fill, 목표색 밝기 중앙값 ≥ min_v."""
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        raw = detector.in_ranges(hsv, self.cfg['target']['hsv_ranges']) > 0
-        keep = []
-        for c in cands:
-            x, y, w, h = cv2.boundingRect(c.contour)
-            m = np.zeros((h, w), np.uint8)
-            cv2.drawContours(m, [c.contour - (x, y)], -1, 1, -1)
-            inside = m > 0
-            r = raw[y:y + h, x:x + w][inside]
-            if not r.size:
-                continue
-            v = hsv[y:y + h, x:x + w, 2][inside][r]
-            if r.mean() >= self.min_fill and (not len(v) or np.median(v) >= self.min_v):
-                keep.append(c)
-        return keep
-
-    def _small(self, frame):
-        s = self.csrt_scale
-        return frame if s == 1.0 else cv2.resize(frame, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
-
-    def _init(self, frame, bb, max_side=64):
-        """CSRT 시작. 상자가 크면(가까운 큐브) 영상을 줄여 상자 장변 ≤ max_side px로 돌린다
-        — CSRT 시간은 상자 크기에 비례(0.1 m에서 17 ms → 약 6 ms)."""
-        x, y, w, h = bb
-        pad = max(2, int(0.1 * max(w, h)))
-        self.csrt_scale = min(1.0, max_side / (max(w, h) + 2 * pad))
-        s = self.csrt_scale
-        self.tracker = cv2.TrackerCSRT_create()
-        self.tracker.init(self._small(frame), tuple(int(round(v * s)) for v in
-                                                     (max(0, x - pad), max(0, y - pad), w + 2 * pad, h + 2 * pad)))
-        self.since_init = 0
+def make_tracker(cfg, use_csrt=True):
+    """use_csrt=True: HSV + CSRT 결합(tracker_node와 같은 CubeTracker), False: 검출기만."""
+    return CubeTracker(cfg) if use_csrt else DetectorOnly(cfg)
 
 
 def draw(frame, out, label=''):
@@ -356,7 +145,7 @@ def run_demo(a, cfg):
         detector.resolve_size_limits(cfg)
         res = {}
         for name, use in [('검출기만', False), ('CSRT 결합', True)]:
-            tr = CubeTracker(cfg, fx, fy, use_csrt=use)
+            tr = make_tracker(cfg, use)
             rows, ms = [], []
             for img, D, gt, i in seq:
                 o = tr.step(img, D)
@@ -393,7 +182,7 @@ def run_dataset(a, cfg):
     di = meta['depth']
     detector.resolve_size_limits(cfg)
     for name, use in [('검출기만', False), ('CSRT 결합', True)]:
-        tr = CubeTracker(cfg, di['fx'], di['fy'], use_csrt=use)
+        tr = make_tracker(cfg, use)
         res, ms = [], []
         for fp in sorted(root.glob('frame_*.png')):
             img = cv2.imread(str(fp)); dep = cv2.imread(str(fp.with_name(fp.name.replace('frame_', 'depth_'))), cv2.IMREAD_UNCHANGED)
@@ -512,7 +301,7 @@ def run_camera(a, cfg):
     detector.resolve_size_limits(cfg)
     scale = prof.get_device().first_depth_sensor().get_depth_scale()
     align = rs.align(rs.stream.color)
-    tr = CubeTracker(cfg, intr.fx, intr.fy)
+    tr = CubeTracker(cfg)
     stats = {'detector': 0, 'csrt': 0, None: 0}
     ms = []
     fps = 30
@@ -584,7 +373,7 @@ def run_replay(a, cfg):
         raise SystemExit(f'{root}에 frame_*.png가 없습니다.')
     print(f'{root}: 원본 {len(frames)}쌍 (기록 간격 {meta.get("record_every", 1)}프레임)')
     for name, use in [('검출기만', False), ('CSRT 결합', True)]:
-        tr = CubeTracker(cfg, di['fx'], di['fy'], use_csrt=use)
+        tr = make_tracker(cfg, use)
         rows = []
         for fp in frames:
             i = int(fp.stem.split('_')[1])
