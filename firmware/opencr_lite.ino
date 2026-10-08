@@ -1,6 +1,7 @@
 // OpenCR / XM430-W350: pan ID11, tilt ID12.
 // USB at 115200: v PAN TILT (rad/s), p (read), x (stop).
 // Reply: P1 SAMPLE PAN_TICKS TILT_TICKS FAULT\n.
+// On fault, an F1 diagnostic precedes P1; the first failure is retained.
 #include <Dynamixel2Arduino.h>
 #include <math.h>
 #include <stdio.h>
@@ -10,6 +11,9 @@
 constexpr uint8_t AXES = 2;
 constexpr uint32_t CYCLE_US = 10000;  // 100 Hz target
 constexpr uint32_t COMMAND_TIMEOUT_MS = 200;
+// Response deadline, not a fixed delay: successful reads return immediately.
+// Allow both motors to reply; the previous 2 ms budget caused missing replies.
+constexpr uint32_t MOTOR_TIMEOUT_MS = 500;
 constexpr float SPEED_UNIT = 1.374f * PI / 180.0f;
 constexpr float MAX_RAD_S = 1.0f;
 constexpr int32_t MAX_POSITION = 1048575;
@@ -32,8 +36,8 @@ struct Axis {
 
 // Home-relative limits, rounded inward to whole encoder ticks.
 Axis axes[AXES] = {
-  {11, 0, -1024, 1024},    // pan: -90 to +90 degrees
-  {12, 2048, -796, 341}    // tilt: -70 to +30 degrees
+  {11, 0, -2048, 2048},    // pan: -180 to +180 degrees
+  {12, 2048, -1365, 1365}  // tilt: -120 to +120 degrees
 };
 int32_t requested[AXES] = {};
 bool faulted = false, command_active = false;
@@ -44,6 +48,25 @@ ParamForSyncReadInst_t read_packet;
 ParamForSyncWriteInst_t write_packet;
 RecvInfoFromStatusInst_t replies;
 
+// Retain the first failure before stopMotion() performs further motor I/O.
+const char *fault_reason = nullptr;
+uint8_t fault_id = 0;
+uint16_t fault_register = 0;
+int32_t fault_value = 0;
+int fault_lib = 0, fault_status = 0;
+
+bool failure(const char *reason, uint8_t id, uint16_t addr, int32_t value) {
+  if (!fault_reason) {
+    fault_reason = reason;
+    fault_id = id;
+    fault_register = addr;
+    fault_value = value;
+    fault_lib = motors.getLastLibErrCode();
+    fault_status = motors.getLastStatusPacketError();
+  }
+  return false;
+}
+
 // Motor I/O. Every response must be complete and error-free.
 bool responseOK() {
   return motors.getLastLibErrCode() == DXL_LIB_OK &&
@@ -51,13 +74,16 @@ bool responseOK() {
 }
 
 bool readMotor(uint8_t i, uint16_t addr, void *data, uint16_t size) {
-  return motors.read(axes[i].id, addr, size,
-    (uint8_t *)data, size, 2) == size && responseOK();
+  int count = motors.read(axes[i].id, addr, size, (uint8_t *)data, size,
+    MOTOR_TIMEOUT_MS);
+  return (count == size && responseOK()) ||
+    failure("read", axes[i].id, addr, count);
 }
 
 bool writeMotor(uint8_t i, uint16_t addr, int32_t value, uint16_t size) {
-  return motors.write(axes[i].id, addr,
-    (uint8_t *)&value, size, 2) && responseOK();
+  return (motors.write(axes[i].id, addr,
+    (uint8_t *)&value, size, MOTOR_TIMEOUT_MS) && responseOK()) ||
+    failure("write", axes[i].id, addr, value);
 }
 
 bool configure(uint8_t i, uint16_t addr, int32_t value, uint16_t size) {
@@ -65,18 +91,22 @@ bool configure(uint8_t i, uint16_t addr, int32_t value, uint16_t size) {
   if (!readMotor(i, addr, &actual, size)) return false;
   if (actual == value) return true;
   return writeMotor(i, addr, value, size) &&
-    readMotor(i, addr, &actual, size) && actual == value;
+    readMotor(i, addr, &actual, size) &&
+    (actual == value || failure("verify", axes[i].id, addr, actual));
 }
 
 bool readBoth(uint16_t addr, uint16_t size) {
   read_packet.addr = addr;
   read_packet.length = size;
-  if (!motors.syncRead(read_packet, replies, 2) ||
-      replies.id_count != AXES) return false;
+  if (!motors.syncRead(read_packet, replies, MOTOR_TIMEOUT_MS) ||
+      replies.id_count != AXES) {
+    uint8_t missing = replies.id_count < AXES ? axes[replies.id_count].id : 0;
+    return failure("sync_read", missing, addr, replies.id_count);
+  }
   for (uint8_t i = 0; i < AXES; ++i) {
     const auto &reply = replies.xel[i];
     if (reply.id != axes[i].id || reply.error || reply.length != size)
-      return false;
+      return failure("sync_reply", axes[i].id, addr, reply.error);
   }
   return true;
 }
@@ -89,16 +119,21 @@ bool readPosition() {
     int64_t relative = (int64_t)axes[i].position - axes[i].origin;
     if (relative < axes[i].lower - TRAVEL_TOLERANCE ||
         relative > axes[i].upper + TRAVEL_TOLERANCE)
-      return false;
+      return failure("travel_range", axes[i].id, Reg::POSITION, relative);
   }
   if (!readBoth(Reg::TORQUE, 7)) return false;
   for (uint8_t i = 0; i < AXES; ++i) {
     const uint8_t *data = replies.xel[i].data;
-    if (data[0] != 1 || data[Reg::ERROR - Reg::TORQUE]) return false;
+    if (data[0] != 1)
+      return failure("torque_off", axes[i].id, Reg::TORQUE, data[0]);
+    if (data[Reg::ERROR - Reg::TORQUE])
+      return failure("hardware_error", axes[i].id, Reg::ERROR,
+        data[Reg::ERROR - Reg::TORQUE]);
   }
   if (!readBoth(Reg::WATCHDOG, 1)) return false;
   for (uint8_t i = 0; i < AXES; ++i)
-    if (replies.xel[i].data[0] == 255) return false;
+    if (replies.xel[i].data[0] == 255)
+      return failure("watchdog", axes[i].id, Reg::WATCHDOG, 255);
   return true;
 }
 
@@ -112,6 +147,7 @@ void stopMotion() {
         writeMotor(i, Reg::GOAL, position, 4)) {
       axis.goal = position;
     } else {
+      failure("stop", axis.id, Reg::GOAL, axis.ready);
       faulted = true;
       writeMotor(i, Reg::TORQUE, 0, 1);
     }
@@ -142,11 +178,12 @@ bool writeSpeed() {
     int32_t data[] = {axis.profile, axis.goal};
     memcpy(write_packet.xel[i].data, data, sizeof(data));
   }
-  if (!motors.syncWrite(write_packet) || !readBoth(Reg::PROFILE, 8))
-    return false;
+  if (!motors.syncWrite(write_packet))
+    return failure("sync_write", 0, Reg::PROFILE, 0);
+  if (!readBoth(Reg::PROFILE, 8)) return false;
   for (uint8_t i = 0; i < AXES; ++i) {
     if (memcmp(replies.xel[i].data, write_packet.xel[i].data, 8))
-      return false;
+      return failure("profile_verify", axes[i].id, Reg::PROFILE, 0);
     axes[i].applied = requested[i];
   }
   return true;
@@ -155,26 +192,32 @@ bool writeSpeed() {
 bool prepareMotor(uint8_t i) {
   Axis &axis = axes[i];
   int32_t offset = 0, error = 0, drive = 0;
-  if (!motors.ping(axis.id) || motors.getModelNumber(axis.id) != XM430_W350)
-    return false;
+  if (!motors.ping(axis.id)) return failure("ping", axis.id, 0, 0);
+  uint16_t model = motors.getModelNumber(axis.id);
+  if (model != XM430_W350) return failure("model", axis.id, 0, model);
   if (!configure(i, Reg::TORQUE, 0, 1) ||
       !configure(i, Reg::WATCHDOG, 0, 1) ||
-      !readMotor(i, Reg::HOME_OFFSET, &offset, 4) || offset != 0 ||
-      !readMotor(i, Reg::ERROR, &error, 1) || error != 0 ||
-      !readMotor(i, Reg::DRIVE, &drive, 1)) return false;
+      !readMotor(i, Reg::HOME_OFFSET, &offset, 4)) return false;
+  if (offset != 0) return failure("home_offset", axis.id, Reg::HOME_OFFSET, offset);
+  if (!readMotor(i, Reg::ERROR, &error, 1)) return false;
+  if (error != 0) return failure("hardware_error", axis.id, Reg::ERROR, error);
+  if (!readMotor(i, Reg::DRIVE, &drive, 1)) return false;
   // Preserve direction; clear time-profile and torque-on-by-goal bits.
   if (!configure(i, Reg::DRIVE, drive & ~12, 1) ||
       !configure(i, Reg::MODE, 4, 1) ||
-      !readMotor(i, Reg::SPEED_LIMIT, &axis.speed_limit, 4) ||
-      axis.speed_limit < 1 || axis.speed_limit > 1023 ||
-      !readMotor(i, Reg::POSITION, &axis.position, 4)) return false;
+      !readMotor(i, Reg::SPEED_LIMIT, &axis.speed_limit, 4)) return false;
+  if (axis.speed_limit < 1 || axis.speed_limit > 1023)
+    return failure("speed_limit", axis.id, Reg::SPEED_LIMIT, axis.speed_limit);
+  if (!readMotor(i, Reg::POSITION, &axis.position, 4)) return false;
   int32_t relative = ((int64_t)axis.position - axis.home) % 4096;
   if (relative > 2048) relative -= 4096;
   if (relative < -2048) relative += 4096;
-  if (relative < axis.lower || relative > axis.upper) return false;
+  if (relative < axis.lower || relative > axis.upper)
+    return failure("startup_range", axis.id, Reg::POSITION, relative);
   int64_t origin = (int64_t)axis.position - relative;
   if (origin + axis.lower < -MAX_POSITION ||
-      origin + axis.upper > MAX_POSITION) return false;
+      origin + axis.upper > MAX_POSITION)
+    return failure("origin_range", axis.id, Reg::POSITION, axis.position);
   axis.origin = origin;
   axis.profile = 1;
   axis.goal = axis.position;
@@ -188,7 +231,14 @@ bool prepareMotor(uint8_t i) {
 
 // Serial interface: p reads position; v writes angular speed; x stops.
 void sendPosition() {
-  char line[80];
+  char line[160];
+  if (faulted && fault_reason && Serial) {
+    int length = snprintf(line, sizeof(line), "F1 %s %u %u %ld %d %d\n",
+      fault_reason, (unsigned)fault_id, (unsigned)fault_register,
+      (long)fault_value, fault_lib, fault_status);
+    if (length > 0 && length < (int)sizeof(line))
+      Serial.write((uint8_t *)line, length);
+  }
   int length = snprintf(line, sizeof(line), "P1 %lu %ld %ld %u\n",
     (unsigned long)sample,
     (long)((int64_t)axes[0].position - axes[0].origin),

@@ -37,3 +37,21 @@ def annotate_target(rgb, bbox):
         cv2.putText(image, 'Blue target', (x, max(15, y - 8)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
     return image
+
+
+def matched_bbox(image, box):
+    """Validate a same-frame detection and return its inclusive pixel rectangle."""
+    if (image.width <= 0 or image.height <= 0
+            or image.header != box.header):
+        raise ValueError('Image and detection headers must match')
+    points = box.polygon.points
+    if len(points) == 0:
+        return None
+    if len(points) != 2:
+        raise ValueError('Bounding box must contain zero or two points')
+    left, right = points
+    if not (0 <= left.x <= right.x < image.width
+            and 0 <= left.y <= right.y < image.height):
+        raise ValueError('Bounding box is outside the image')
+    return (round(left.x), round(left.y),
+            round(right.x - left.x + 1), round(right.y - left.y + 1))
