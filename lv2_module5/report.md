@@ -658,14 +658,12 @@ ros2 bag record -s mcap -o ~ /bags/p5_success_replay \
 `/target` 353/247 · `/cmd_vel` 418/326 · `/perception_status` 42/54 · `/joint_states` 2,274/1,353.
 mcap 4개의 SHA-256은 `problem5/report_problem5.md`에 전문이 있다.
 
-```markdown
 ### 2.2 bag 메타데이터
 
 | bag | 장면 | 기간 [s] | 크기 | 메시지 수 | SHA-256 (mcap) |
 |---|---|---|---|---|---|
 | `p5_success` | 대표 성공 | 47.81 | 912.0 MiB | 4864 | `f2d9a2c3…8b7594638` |
 | `p5_loss_return` | 소실·복귀 | 29.48 | 575.0 MiB | 3101 | `34fc72b6…1e63938` |
-```
 
 > 용량이 커서 **저장소에 올리지 않았다.** 외부 저장 위치·
 > 
@@ -723,14 +721,11 @@ mcap 4개의 SHA-256은 `problem5/report_problem5.md`에 전문이 있다.
 
 *다른 PC에서 `p5_success`를 재처리 중인 RViz. 왼쪽 위 Tracking Image에 큐브 검출 박스, 오른쪽에 로봇 모델과 이미지 평면*
 
-```markdown
 | 항목 | 값 |
 |---|---|
 | 검출 설정 로드 | HSV [104,200,8] ~ [120,255,255], min_area 57 px, depth 0.1 ~ 1.1 m — `detector.yaml`과 같음 |
 | sim time | `now`가 bag 시각(1791422034 ~ 046 s)을 따라감, `stale 0` |
 | 처리량 (2 s마다) | 동기화 40 ~ 45쌍 중 24 ~ 30개 처리 → 약 12 ~ 15 FPS |
-
-```
 
 ## 5.5 해석
 
