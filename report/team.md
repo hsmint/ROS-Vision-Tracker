@@ -31,7 +31,6 @@
 - **제어 연결:** `/cmd_vel`의 `Twist`와 OpenCR 통신을 연결하고 위치 읽기를 지원했다.
 - **실행·시각화 통합:** 제작된 URDF를 저장소에 반영하고 시각화·launch 구성을 추가했다.
 - **구조 통합:** 인지 기능을 `xmen_tracker`로 모으고 기본 제어를 lite 경로로 전환했다.
-- **검토·병합:** PR #7·#8을 작성하고 팀 PR 8건을 병합했다.
 
 #### 구현과 협업
 
@@ -79,9 +78,7 @@
 | 초기 제어 구현 | 카메라 제어 코드를 작성하고 진행 자료를 정리했다 | [c0d8332e](https://github.com/hsmint/ROS-Vision-Tracker/commit/c0d8332e14aa9e1327fee5df5c819834483e13eb) |
 | 두 축 동시 제어 | X/Y 움직임 명령을 동시에 적용하도록 control 패키지를 수정했다 | [1452344a](https://github.com/hsmint/ROS-Vision-Tracker/commit/1452344a198f9f2cca26eca8b2200b50413f612f), [83a5479c](https://github.com/hsmint/ROS-Vision-Tracker/commit/83a5479cfb33cd3f9bcb84479e5a1bfa286c6163), [PR #2](https://github.com/hsmint/ROS-Vision-Tracker/pull/2) |
 | URDF 모델 제작 | 팬·틸트 구조의 URDF 모델을 제작했다 | 10월 6일 제작 완료, [URDF 산출물](https://github.com/hsmint/ROS-Vision-Tracker/blob/8432524e0d5fd8cf6cee40536bbffdeb1c50b934/xmen_description/urdf/cctv.urdf). 저장소 반영·launch 연동은 [홍석민](https://github.com/hsmint)이 담당했다 |
-| 정리와 수정 | 코드 가독성을 개선하고 `mian.py`를 `main.py`로 수정했다. 그림 폴더와 제어 설명 자료를 보완했다 | [9e42ad52](https://github.com/hsmint/ROS-Vision-Tracker/commit/9e42ad5265c0c768202276b70970d5eb8ed88cb2), [bcb5f547](https://github.com/hsmint/ROS-Vision-Tracker/commit/bcb5f5477ba391de62942576f13dd49c11bdbf10), [PR #3](https://github.com/hsmint/ROS-Vision-Tracker/pull/3) |
-
-작성한 PR #2·#3이 병합되었다. #2는 develop에 직접 병합되었고, #3은 control에 병합된 뒤 #7을 통해 develop에 포함되었다. develop의 8개 커밋 중 일반 7개, merge 1개다.
+| 정리와 수정 | 그림 폴더와 제어 설명 자료를 보완했다 | [9e42ad52](https://github.com/hsmint/ROS-Vision-Tracker/commit/9e42ad5265c0c768202276b70970d5eb8ed88cb2), [bcb5f547](https://github.com/hsmint/ROS-Vision-Tracker/commit/bcb5f5477ba391de62942576f13dd49c11bdbf10), [PR #3](https://github.com/hsmint/ROS-Vision-Tracker/pull/3) |
 
 ---
 
@@ -108,9 +105,8 @@
 | 실행·검증 | 전체 실행 launch와 설정, 검증 노드·launch를 작성하고 실행·인터페이스 문서를 정리했다 | [e65647b6](https://github.com/hsmint/ROS-Vision-Tracker/commit/e65647b612cda3cb973857e3420fc56bac5510de), [ea1cd634](https://github.com/hsmint/ROS-Vision-Tracker/commit/ea1cd6342651d4d61a932452ff2424074158c657) |
 | 제어·시리얼 | 팬·틸트 제어, watchdog·출력 OFF를 구현했다. OpenCR V 명령 전송·P 응답 수신, `/joint_states` 발행과 회전 제한을 추가했다 | [50c2408b](https://github.com/hsmint/ROS-Vision-Tracker/commit/50c2408b5a4e0112e23c8057f6c93771262561be), [296c9869](https://github.com/hsmint/ROS-Vision-Tracker/commit/296c9869294fd65ca2f4d2430daa7594a1f8b4fd) |
 | 패키지 정리 | 인지·제어·bringup을 역할별 폴더로 옮기고 카메라 입력 방식 선택 기능을 추가했다 | [bd494262](https://github.com/hsmint/ROS-Vision-Tracker/commit/bd494262f9163058579e7ee4a2e4ee0e81135b57) |
-| 병합 협업 | [홍석민](https://github.com/hsmint)이 작성한 PR #8을 병합했다 | [PR #8](https://github.com/hsmint/ROS-Vision-Tracker/pull/8) |
 
-PR #5를 작성했으며, develop에 포함된 커밋 12개 중 일반 커밋은 11개, merge 커밋은 1개다. PR #5에서 보고한 시험 결과는 다음과 같다.
+PR #5에서 보고한 시험 결과는 다음과 같다.
 
 - 모의 입력 시험 11/11 통과
 - 모터 출력 OFF 조건에서 `/search` 시험 5/5 통과
@@ -197,8 +193,6 @@ PR #5를 작성했으며, develop에 포함된 커밋 12개 중 일반 커밋은
 
 ### 3.2 PR 일자
 
-총 **10건의 PR을 병합했다.** 작성자는 PR 개설자이며, 날짜는 UTC 기준이다.
-
 | PR | 작성자 | 생성일 → 병합일 | 대상과 상태 | 실제 병합자 | 핵심 내용 |
 | --- | --- | --- | --- | --- | --- |
 | [#2](https://github.com/hsmint/ROS-Vision-Tracker/pull/2) | [김혜민](https://github.com/heffeekim94-web) | 2026-10-03 → 2026-10-04 | `control` → `develop`; 병합 | [홍석민](https://github.com/hsmint) | 두 축 동시 입력·공통 속도·제어 패키지 |
@@ -212,59 +206,30 @@ PR #5를 작성했으며, develop에 포함된 커밋 12개 중 일반 커밋은
 | [#11](https://github.com/hsmint/ROS-Vision-Tracker/pull/11) | [이홍주](https://github.com/kanichong) | 2026-10-08 → 2026-10-08 | `vision` → `develop`; 병합 | [홍석민](https://github.com/hsmint) | 인지 구조·ROI 깊이 계산·CSRT 보완 |
 | [#13](https://github.com/hsmint/ROS-Vision-Tracker/pull/13) | [이홍주](https://github.com/kanichong) | 2026-10-08 → 2026-10-08 | `vision` → `develop`; 병합 | [홍석민](https://github.com/hsmint) | cube tracker·CSRT·배경 분리·단절 복구 |
 
-- #3은 fork의 control → 원본 control 병합이며, 이후 #7을 통해 해당 커밋들이 develop에 포함되었다.
-- #4는 [최형준](https://github.com/chj1319)·[이홍주](https://github.com/kanichong), #5는 [최형준](https://github.com/chj1319)·[홍석민](https://github.com/hsmint), #7은 [김혜민](https://github.com/heffeekim94-web)·[홍석민](https://github.com/hsmint), #11은 [이홍주](https://github.com/kanichong)·[홍석민](https://github.com/hsmint)이 작성한 커밋을 함께 포함한다.
-
 ### 3.3 기능별 통합 결과
 
 `RealSense → realsense_node → tracker_node(detector + CubeTracker + P 제어) → /cmd_vel → control_lite → opencr_lite → 팬·틸트 모터`
 
-| 영역 | develop 통합 결과 | 담당 기여 |
+| 영역 | 통합 결과 | 담당 기여 |
 | --- | --- | --- |
 | 카메라 입력 | BGR8 영상과 색상 정렬 depth를 같은 타임스탬프로 발행, CameraInfo 제공. 최신 RGB/depth 쌍만 처리 | [최형준](https://github.com/chj1319)이 초기 ROS 입력과 인터페이스를 구현했다 |
 | 객체 인지 | HSV·Contour·모양·depth·실제 크기 검사. 잘린/가려진 후보와 붙은 배경 분리 | [이홍주](https://github.com/kanichong)가 튜닝·detector·추적 기능을, [최형준](https://github.com/chj1319)이 초기 인지 노드를 구현했다 |
-| 시간적 추적 | SEARCH/CONFIRM/TRACK, 검출 실패 시 CSRT 보완 후 현재 프레임 색·깊이 검증 | [이홍주](https://github.com/kanichong)가 CSRT 보완과 현재 프레임 재검증을 구현하고 PR #13에 반영했다 |
+| 시간적 추적 | SEARCH/CONFIRM/TRACK, 검출 실패 시 CSRT 보완 후 현재 프레임 색·깊이 검증 | [이홍주](https://github.com/kanichong)가 CSRT 보완과 현재 프레임 재검증을 구현하고 반영했다 |
 | 목표와 명령 | `/target`의 x/y는 정규화 영상 오차, z는 면적 비율. `/cmd_vel`은 pan=`angular.z`, tilt=`angular.y`, rad/s | P 제어에 출력 제한을 적용하고, 미검출·오래된 입력에서 정지하도록 구현했다 |
 | 모터 제어 | 기본 경로는 `control_lite`와 `opencr_lite.ino`. 피드백 기반 홈 복귀, 시리얼 명령/피드백 유효성 검사, timeout·fault 처리 | [김혜민](https://github.com/heffeekim94-web)이 초기 제어를 구현하고 [홍석민](https://github.com/hsmint)이 ROS 연동과 lite 전환을 수행했다 |
 | 실행·시각화 | hardware launch, bag 입력 시 모터 제어 비활성화, 독립 preview·RViz 노드, URDF 모델 | [최형준](https://github.com/chj1319)이 초기 launch·검증 구성을, [김혜민](https://github.com/heffeekim94-web)이 URDF 제작을, [홍석민](https://github.com/hsmint)이 시각화·launch 연동을 담당했다 |
-
-기본 제어 경로의 [lite 펌웨어](https://github.com/hsmint/ROS-Vision-Tracker/blob/8432524e0d5fd8cf6cee40536bbffdeb1c50b934/firmware/opencr_lite.ino)는 pan ID11·tilt ID12를 사용하며, 각도 제한은 pan ±180°, tilt 약 ±120°다. 기본 bridge의 명령·피드백 timeout은 0.2초다. 별도의 full 경로(`control.py` + `opencr_control.ino`)는 EEPROM 복원과 tilt ±135° 제한을 포함하며 프로토콜·timeout 설정도 다르다. 실제 업로드 펌웨어와 [기본 launch](https://github.com/hsmint/ROS-Vision-Tracker/blob/8432524e0d5fd8cf6cee40536bbffdeb1c50b934/xmen_bringup/launch/hardware_launch.py)의 조합, 홈·회전 방향·단절 시 정지는 장비 검증이 남아 있다.
-
-**실물 피드백과 시각화:** JointState 이름은 `pan`/`tilt`, [URDF](https://github.com/hsmint/ROS-Vision-Tracker/blob/8432524e0d5fd8cf6cee40536bbffdeb1c50b934/xmen_description/urdf/cctv.urdf#L520-L549)의 가동 관절명은 `revolute_1`/`revolute_2`이며 각도 제한도 lite 펌웨어와 다르다. [RViz launch](https://github.com/hsmint/ROS-Vision-Tracker/blob/8432524e0d5fd8cf6cee40536bbffdeb1c50b934/xmen_bringup/launch/rviz2_launch.py)는 관절명 변환 없이 URDF를 사용하고 기본값으로 합성 joint state를 발행한다. 실물 피드백과 모델 동작을 맞추기 위한 관절명·제한·발행 설정 점검과 장비 재검증이 필요하다.
 
 ---
 
 ## 4. 리뷰와 협업
 
-### 4.1 공식 코드 리뷰
-
-[홍석민](https://github.com/hsmint)이 PR #13을 검토하고 승인했다. 병합 PR 10건에 제출된 팀원의 공식 코드 리뷰는 **1건**이다.
-
-| PR | 리뷰어 | 제출 시각 UTC | 공식 상태 | 근거 |
-| --- | --- | --- | --- | --- |
-| [#13](https://github.com/hsmint/ROS-Vision-Tracker/pull/13) | [홍석민](https://github.com/hsmint) (`hsmint`) | 2026-10-08 01:36:14 | APPROVED | [공식 리뷰 제출 기록](https://github.com/hsmint/ROS-Vision-Tracker/pull/13#pullrequestreview-5450389248) |
-
-PR #2·#7·#8의 Copilot 항목은 할당량 초과 통지로, 코드 리뷰를 수행하지 못했다.
-
-### 4.2 협업 방식
+### 4.1 협업 방식
 
 1. **역할 분담:** 10월 1일 회의에서 팀장·제어·통합·인지를 나누고 저장소 설정, 펌웨어, ROS 통합과 비전 최적화 작업을 배정했다.
 2. **진행 상황 공유:** 타임라인과 개인 일지에 담당 작업, 문제 해결 과정과 산출물을 정리해 공유했다.
 3. **인터페이스 조정:** 인지 측 입력 형식을 통일하고 제어 명령 토픽을 `/cmd_vel`로 변경했다.
 4. **기능별 검증:** [이홍주](https://github.com/kanichong)가 조명·거리별 인지 성능을 평가하고 [김혜민](https://github.com/heffeekim94-web)이 모터 구동·통신과 두 축 동작을 검증했다.
 5. **코드 통합:** 기능별 PR을 병합해 인지·추적·제어·실행 코드를 develop에 통합했다.
-
-### 4.3 남은 통합 검증
-
-같은 develop 버전으로 다음 항목을 검증해야 한다. 관련 기여자는 아래와 같으며, 시험 담당·일정·성공 기준은 미정이다.
-
-| 영역 | 관련 기여자 | 남은 검증 항목 |
-| --- | --- | --- |
-| 제어·안전 | [홍석민](https://github.com/hsmint)·[김혜민](https://github.com/heffeekim94-web)의 제어 작업 | 업로드 펌웨어와 full/lite 조합, pan ID11·tilt ID12, 홈 순서·회전 부호·기구 제한, 명령·피드백 단절과 오류 후 복구를 확인. 장비·펌웨어·입력·실제 위치/상태 로그를 함께 기록 |
-| 통합·시각화 | [최형준](https://github.com/chj1319)의 ROS 통합, [김혜민](https://github.com/heffeekim94-web)의 URDF 제작, [홍석민](https://github.com/hsmint)의 launch 연동 | 현재 develop 빌드·실행, RGB/depth/CameraInfo·토픽 주기·QoS·명령 흐름을 확인. 관절명·축·영점·제한과 RViz 합성 joint-state 설정을 점검하고 실측 피드백과 모델 동작을 로그/영상으로 대조 |
-| 인지·추적 | [이홍주](https://github.com/kanichong)의 튜닝·detector·CSRT 구현 | 조명·거리·같은 색 배경·부분 가림별 검출/오검출과 처리 시간을 재평가. 후보 수 증가 시 지연, 미검출 보완, 영상 단절 후 초기화·재획득을 같은 장비·영상·설정으로 확인 |
-
-검출·추적 보완 코드는 병합을 완료했으며, 현재 통합본의 장비 재검증은 남아 있다. RViz 관절명·제한 정합과 full/lite 조합은 코드 점검에서 찾은 검증 과제다. 시험 시 기준 SHA, 조건, 로그·영상과 기대값·실제 결과를 함께 확인해야 한다.
 
 ---
 
@@ -278,9 +243,7 @@ PR #2·#7·#8의 Copilot 항목은 할당량 초과 통지로, 코드 리뷰를 
 | 10월 4일 | 제어 PR #2를 develop에 반영 | [김혜민](https://github.com/heffeekim94-web) 작성, [홍석민](https://github.com/hsmint) 병합 | [PR #2](https://github.com/hsmint/ROS-Vision-Tracker/pull/2) |
 | 10월 6일 | 제어 정리·URDF 모델 제작 완료, 인지 튜닝, 역할별 패키지·토픽·시리얼 통합, URDF·launch 반영 | #3은 control에 병합. #4·#5·#6·#7·#8은 develop에 병합. [김혜민](https://github.com/heffeekim94-web)이 제작한 URDF를 [홍석민](https://github.com/hsmint)이 저장소·launch에 반영하고 [최형준](https://github.com/chj1319)이 #8을 병합 | 개인 일지와 병합 PR |
 | 10월 7일 | cube detector 반영, tracker 구조 통합, lite 제어 전환 | [이홍주](https://github.com/kanichong) detector, [홍석민](https://github.com/hsmint) 통합·제어 변경 | [PR #10](https://github.com/hsmint/ROS-Vision-Tracker/pull/10), 직접 작성 커밋 |
-| 10월 8일 | 인지·CSRT·단절 복구 변경 반영. PR #13은 01:36:14 승인 후 01:36:27 병합. 통합 코드 반영 완료, 실기 검증 대기 | [이홍주](https://github.com/kanichong) 작성, [홍석민](https://github.com/hsmint) 승인·병합. PR #11에는 공동 작성 커밋 포함 | [PR #11](https://github.com/hsmint/ROS-Vision-Tracker/pull/11), [PR #13](https://github.com/hsmint/ROS-Vision-Tracker/pull/13), 10월 8일 프로젝트 타임라인 |
-
-10월 8일 프로젝트는 **진행 중**이다. 인지·추적·제어·실행 코드의 develop 통합을 완료했으며, 같은 버전으로 장비 동작과 성능을 다시 검증해야 한다. [김혜민](https://github.com/heffeekim94-web)의 10월 6일 개인 작업은 완료 상태다.
+| 10월 8일 | 인지·CSRT·단절 복구 변경 반영 | [이홍주](https://github.com/kanichong) 작성, [홍석민](https://github.com/hsmint) 승인·병합. PR #11에는 공동 작성 커밋 포함 | [PR #11](https://github.com/hsmint/ROS-Vision-Tracker/pull/11), [PR #13](https://github.com/hsmint/ROS-Vision-Tracker/pull/13), 10월 8일 프로젝트 타임라인 |
 
 ---
 
