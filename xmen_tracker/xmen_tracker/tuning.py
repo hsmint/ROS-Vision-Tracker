@@ -1,6 +1,6 @@
 """tuning — 검출(detector.py) 튜닝·확인 도구. detector 노드와 같은 설정·같은 코드로 동작한다.
 
-  ros2 run target_perception tuning <모드> --camera [--config <yaml>] [--out <폴더>]
+  ros2 run xmen_tracker tuning <모드> --camera [--config <yaml>] [--out <폴더>]
 
 모드
   tune    HSV 트랙바 튜닝. w = 설정 파일에 HSV 범위 기록 + 근거(<out>/tune) 저장
@@ -12,8 +12,8 @@
   --camera        설정의 camera(RealSense 컬러 + 뎁스) 사용
   --image A B ..  저장 영상. scenes 모드에서는 보임·없음·가림 순서로 3장
   (생략)          합성 영상 — 실제 카메라 촬영이 아님
-기본값: --config = 패키지 config/detector.yaml(--symlink-install이면 저장소 파일), --out = <ws>/results/perception
-카메라는 한 프로세스만 연다 — detector 노드(perception·bringup launch)를 끄고 실행한다.
+기본값: --config = 패키지 config/detector.yaml(--symlink-install이면 저장소 파일), --out = <cwd>/results/perception
+카메라는 한 프로세스만 연다 — realsense_node를 끄고 실행한다.
 """
 import argparse
 import json
@@ -25,8 +25,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from target_perception import detector
-from tracking_common import interface as I
+from xmen_tracker import detector
 
 SCENES = ['visible', 'absent', 'occluded']
 
@@ -538,8 +537,8 @@ def main():
     src.add_argument('--camera', action='store_true')
     src.add_argument('--image', type=Path, nargs='+')
     p.add_argument('--config', type=Path, default=detector.DEFAULT_CONFIG)
-    p.add_argument('--out', type=Path, default=I.results_dir() / 'perception',
-                   help='결과 폴더(기본 <ws>/results/perception)')
+    p.add_argument('--out', type=Path, default=(Path.cwd() / 'results') / 'perception',
+                   help='결과 폴더(기본 <cwd>/results/perception)')
     p.add_argument('--no-gui', action='store_true')
     p.add_argument('--label', default='baseline', help='bench 조건 이름 (예: bright, dim, near, far)')
     p.add_argument('--frames', type=int, default=100, help='bench 프레임 수')

@@ -1,6 +1,6 @@
 # 노드 수신·송신 (토픽·액션)
 
-Xmen 저장소의 ROS 노드(인지 `xmen_vision`, 제어 `xmen_control`, 통합 `xmen_bringup`)가 무엇을 받고 무엇을 내는지
+Xmen 저장소의 ROS 노드(인지 `xmen_tracker`, 제어 `xmen_control`, 통합 `xmen_bringup`)가 무엇을 받고 무엇을 내는지
 정리한 문서다. 토픽 이름·타입·QoS는 모두 `xmen_bringup/tracking_common/tracking_common/interface.py` 한 곳에서 정의하고, 노드는 그 값을 가져다 쓴다.
 **이름·QoS를 바꿀 때는 interface.py만 고친다** — 노드 코드에 토픽 이름을 직접 쓰지 않는다.
 
@@ -33,7 +33,7 @@ target_detector ──/target──▶ tracking_controller ──/cmd_vel──�
 | 단계 | 노드 | 패키지 | 받는 것 → 내는 것 |
 |---|---|---|---|
 | 카메라 (방식 B) | `camera` (realsense2_camera) | realsense2_camera (apt) | USB → 컬러·정렬 뎁스·camera_info 묶음 |
-| 인지 | `target_detector` | target_perception | 카메라 영상 → 목표의 화면 중심 오차 |
+| 인지 | `tracker_node` | xmen_tracker | 카메라 영상 → 목표의 화면 중심 오차 |
 | 제어 | `tracking_controller` | target_control | 오차 → 팬·틸트 속도 명령, 추적 상태 |
 | 구동 | `motor_driver` | target_control | 속도 명령 → 하드웨어 (현재 출력 OFF, 로그만) |
 
@@ -106,31 +106,25 @@ target_detector ──/target──▶ tracking_controller ──/cmd_vel──�
 
 ---
 
-`/camera/camera/rgbd`가 실행 중일 때는 `/camera/camera/color/image_raw`, `aligned_depth_to_color/image_raw` 등
-realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 이것들을 구독하지 않는다(RGBD 한 토픽만 사용).
-
 ## 4. 노드별 수신·송신
 
-### realsense2_camera (방식 B, xmen_vision/target_perception/launch/camera.launch.py)
+### realsense_node (`xmen_tracker`)
 
-| 구분 | 내용 |
-|---|---|
-| 수신 | D435 USB |
-| 송신 | `/camera/camera/rgbd` (컬러 + 컬러에 정렬한 뎁스 + camera_info, 같은 프레임끼리 묶음) |
-| 설정 | 640×360@30, `align_depth`, `enable_sync`, `enable_rgbd`, `initial_reset`, 적외선·IMU·점구름 끔 |
-| 실행 | `ros2 launch target_perception camera.launch.py viewer:=false` |
+Publishes `/camera/color/image_raw` (`bgr8`) and
+`/camera/aligned_depth_to_color/image_raw` (`32FC1`, meters) with matching timestamps
+and optical frames, and `/camera/color/camera_info` once at startup (transient local).
+Run `ros2 run xmen_tracker realsense_node`.
 
-### target_detector (xmen_vision/target_perception/target_perception/detector_node.py)
+### tracker_node (`xmen_tracker`)
 
-| 구분 | 내용 |
-|---|---|
-| 수신 | 방식 B(RPi): `/camera/camera/rgbd` 구독 (`source:=ros`). 방식 A(PC): 카메라 USB 직접 (pyrealsense2, `source:=realsense`, 기본) |
-| 송신 | `/target`, `/perception_status` |
-| 동작 | B: RGBD 수신 → cv_bridge로 변환 → 검출. A: 전용 스레드가 `wait_for_frames`로 새 프레임 대기 → 뎁스를 컬러에 정렬 → 검출. 검출은 HSV → 컨투어 → 필터 → 뎁스 중앙값 검증 → 선택 → 중심 |
-| 거르는 것 | 같은 영상은 발행 안 함 (B: header.stamp가 이전 이하, A: 프레임 번호가 이전 이하) |
-| 실행 | B: `ros2 run target_perception detector --ros-args -p source:=ros` / A: `ros2 run target_perception detector` |
-| 정지 판단 | 0.3 s 새 영상 없음 → `CAMERA_STALL`, 발행 중단 |
-| 주요 파라미터 | `config`(detector.yaml), `show`(검출 화면), `target_topic`·`status_topic`(재처리 시 `/target_replay`·`/perception_status_replay`) |
+Consumes exact-time color/depth pairs and optional camera calibration (`detector_config`,
+default `xmen_tracker/config/detector.yaml`). Runs the
+merged HSV/shape/depth/physical-size/occlusion pipeline and publishes `/target`,
+`/perception_status`, `/tracking/bbox`, and `/cmd_vel`. Missing or stale targets
+stop motion. Run `ros2 run xmen_tracker tracker_node`. Configuration and current
+interfaces are documented in [xmen_tracker](../xmen_tracker/README.md).
+The standalone perception node is retired. The controller descriptions below
+are legacy; do not run another `/cmd_vel` source with `tracker_node`.
 
 ### tracking_controller (xmen_control/target_control/target_control/controller_node.py)
 
@@ -160,7 +154,7 @@ realsense2_camera의 개별 영상 토픽도 함께 나온다. 우리 노드는 
 
 | 노드 | 수신 | 송신 | 용도 |
 |---|---|---|---|
-| `camera_viewer` (target_perception) | `/camera/camera/rgbd` | 없음 | realsense2_camera 방식일 때 영상 확인 |
+| `rviz_node` (xmen_tracker) | `/tracking/preview/compressed`, `/target` | RViz overlays | 원격 영상 확인 |
 | `input_test` | `/cmd_vel`, `/tracking_status` | `/target` (모의) | 모의 입력 11단계 → PASS/FAIL, CSV |
 | `gimbal_sim` | `/cmd_vel` | `/target` (모의) | 명령을 적분한 가상 짐벌로 부호 시험 |
 | `search_test` | `/cmd_vel`, `/tracking_status` | `/target` (모의), `/search` 요청 | 액션 5가지 경우 |

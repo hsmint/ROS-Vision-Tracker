@@ -1,6 +1,6 @@
 # xmen_bringup
 
-ROS 2 Lyrical launches for the current `xmen_vision` and `xmen_tracker` nodes.
+ROS 2 Lyrical launches for the current `xmen_tracker` nodes (camera, tracker, preview, RViz).
 
 | Machine | Launch | Nodes |
 |---|---|---|
@@ -155,7 +155,7 @@ carry both raw image streams):
 
 ```bash
 ros2 bag record -o ~/bags/target_run \
-  /camera/color/image_raw /camera/aligned_depth_to_color/image_raw
+  /camera/color/image_raw /camera/aligned_depth_to_color/image_raw /camera/color/camera_info
 ```
 
 Stop recording with Ctrl-C. Use a new output directory for each recording.
@@ -188,7 +188,7 @@ detect a running bag or switch an already running camera. Restart the launches
 when changing modes. Recording a live camera does not require `use_bag:=true`.
 
 With a `bag_path`, the launch starts `ros2 bag play --clock`, waits two seconds
-before playback, and replays only the two image inputs. It applies reliable
+before playback, and replays only the two image inputs and `camera_info`. It applies reliable
 image QoS using `param/bag_qos.yaml` so the tracker subscriptions can connect.
 Recorded `/cmd_vel`, targets, and detections are not replayed. The tracker and
 visualization remain open at the end of playback; stop them with Ctrl-C.
@@ -203,7 +203,7 @@ ros2 launch xmen_bringup hardware_launch.py use_bag:=true
 # Another sourced terminal:
 ros2 bag play /absolute/path/to/target_run --clock 100 --delay 2 \
   --qos-profile-overrides-path "$(ros2 pkg prefix --share xmen_bringup)/param/bag_qos.yaml" \
-  --topics /camera/color/image_raw /camera/aligned_depth_to_color/image_raw
+  --topics /camera/color/image_raw /camera/aligned_depth_to_color/image_raw /camera/color/camera_info
 ```
 
 Do not leave a live camera publishing the same topics during playback. If the
