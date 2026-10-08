@@ -251,19 +251,14 @@ detection, see [xmen_tracker](xmen_tracker/README.md) and
 
 ## Performance Snapshot
 
-**Raspberry Pi 4** · 640×360 RGB + depth · 60-second sample · October 8, 2026
+**Raspberry Pi 4** · 640×360 RGB + depth · 60-second sample
 
 | 📷 RGB / Depth | 🎯 Tracking | ⚙️ Commands | 🖥️ Preview |
 | :---: | :---: | :---: | :---: |
 | **25.85 / 25.86 FPS** | **12.66 Hz** | **13.59 Hz** | **2.00 FPS** |
 
-**Target data age:** 252 ms average · 296 ms p95
 
 **Tracker status:** `OK` throughout the sample
-
-*Configured for 15 Hz tracking and 2 Hz preview. Measurements reflect local
-message delivery, not detection accuracy or motor response; no joint feedback
-was received.*
 
 ## Contributors
 
