@@ -1,0 +1,64 @@
+name: Raspberry Pi release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - '.github/workflows/raspberry-pi-release.yml'
+      - 'scripts/release/**'
+      - 'xmen_*/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    # Match the Pi's OS/Python ABI, independently of the runner's host OS.
+    container: ros:lyrical-ros-base-resolute
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build and runtime dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential cmake python3-colcon-common-extensions python3-rosdep
+          rosdep update --rosdistro lyrical
+          rosdep install --from-paths xmen_bringup xmen_control xmen_description xmen_tracker --ignore-src --rosdistro lyrical -y
+      - name: Build and test relocated archive
+        env:
+          RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+        run: bash scripts/release/build.sh "$RELEASE_VERSION" "$GITHUB_WORKSPACE/dist"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xmen-raspberry-pi-ubuntu-26.04-lyrical-arm64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: xmen-raspberry-pi-ubuntu-26.04-lyrical-arm64
+          path: dist
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "Xmen $RELEASE_TAG — Raspberry Pi" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber

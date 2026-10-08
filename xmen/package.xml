@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>xmen</name>
+  <version>1.0.0</version>
+  <description>
+    Metapackage for ROS-Vision-Tracker: a depth-aware two-axis camera tracker
+    that follows a blue cube with an Intel RealSense camera, a Raspberry Pi and
+    an OpenCR-driven DYNAMIXEL pan/tilt rig. Installing this package pulls in
+    perception, control, description and bringup.
+  </description>
+  <maintainer email="hsmint.hong@gmail.com">hsmint</maintainer>
+  <license>MIT</license>
+  <url type="repository">https://github.com/hsmint/ROS-Vision-Tracker</url>
+  <url type="bugtracker">https://github.com/hsmint/ROS-Vision-Tracker/issues</url>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xmen_tracker</exec_depend>
+  <exec_depend>xmen_control</exec_depend>
+  <exec_depend>xmen_description</exec_depend>
+  <exec_depend>xmen_bringup</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
