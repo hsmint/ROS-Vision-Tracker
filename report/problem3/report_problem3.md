@@ -37,6 +37,8 @@ ros2 launch target_bringup bringup.launch.py                       # detector + 
 
 추적을 끄고(controller 미실행) control만 켠 상태에서 작은 명령(0.1 rad/s)을 축마다 보내 실제 회전 방향을 확인했다.
 
+
+
 ```bash
 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{angular: {z: 0.1}}"   # 팬
 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{angular: {y: 0.1}}"   # 틸트
@@ -76,6 +78,22 @@ command = clamp(direction × Kp × e, -speed_limit, +speed_limit)   (그 외)
 - 범위: 팬 ±180°, 틸트 ±135° (홈 기준). 범위 끝에서 감속 후 위치 유지. 바깥 방향 명령 차단 여부 (확인 필요)
 - 속도 명령이 500 ms 동안 갱신되지 않으면 펌웨어가 스스로 정지, control은 0.5 s 무명령 시 `v 0 0` 전송
 - 속도 명령은 "범위 끝을 목표로 한 프로파일 속도 이동"으로 구현되어 있고 가속 시간 0.3 s
+
+![방향부호 확인](gif/KP1_5.gif)
+- kp1.5 
+
+<br>
+
+![방향부호 확인](gif/Kp2_0.gif)
+- kp2.0 
+
+<br>
+
+![방향부호 확인](gif/Kp2_5.gif)
+- kp2.5 
+
+<br>
+
 
 ## 4. 시험 방법
 
