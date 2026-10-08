@@ -162,9 +162,9 @@ using reliable, volatile, keep-last depth 1 QoS, matching `motor_driver_node`:
 
 The calculation is `clamp(sign * gain * normalized_error, -limit, limit)`,
 with zero output inside the deadband. Startup parameters are
-`kp=1.5`, `cmd_sign=-1.0`, `deadband=0.05`, `max_speed=0.9`,
-`kp_tilt=1.2`, `cmd_sign_tilt=1.0`, `deadband_tilt=0.05`,
-`max_speed_tilt=0.6`, `tilt_enabled=true`, `rate_hz=20.0`, `tracking_hz=20.0`, `timeout=0.5`,
+`kp=0.8`, `cmd_sign=-1.0`, `deadband=0.05`, `max_speed=0.48`,
+`kp_tilt=0.64`, `cmd_sign_tilt=1.0`, `deadband_tilt=0.05`,
+`max_speed_tilt=0.32`, `tilt_enabled=true`, `rate_hz=20.0`, `tracking_hz=20.0`, `timeout=0.5`,
 and `max_input_age=0.5`. Gains convert normalized error to rad/s.
 
 No target, invalid results, stale images, or missing input produce zero commands.

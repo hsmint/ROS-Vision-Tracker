@@ -58,9 +58,9 @@ class TrackerNode(Node):
             'legacy_rgb_bag': False,
             # true면 2초마다 수신/동기화/처리 개수와 스탬프 나이를 info로 출력(bag 재생 시 시간 확인용)
             'debug_timing': False,
-            'kp': 1.5, 'cmd_sign': -1.0, 'deadband': 0.05, 'max_speed': 0.9,
-            'kp_tilt': 1.2, 'cmd_sign_tilt': 1.0, 'deadband_tilt': 0.05,
-            'max_speed_tilt': 0.6, 'tilt_enabled': True,
+            'kp': 0.8, 'cmd_sign': -1.0, 'deadband': 0.05, 'max_speed': 0.48,
+            'kp_tilt': 0.64, 'cmd_sign_tilt': 1.0, 'deadband_tilt': 0.05,
+            'max_speed_tilt': 0.32, 'tilt_enabled': True,
             'rate_hz': 20.0, 'tracking_hz': 20.0, 'timeout': 0.5, 'max_input_age': 0.5,
         }
         self.settings = {

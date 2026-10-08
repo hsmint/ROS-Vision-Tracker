@@ -1,20 +1,20 @@
 # 노드 파라미터 — 인터페이스 표의 단위·부호·주기·타임아웃과 같은 값이다.
 tracker_node:
   ros__parameters:
-    kp: 1.5               # [rad/s] / 정규화 오차 1.0 — ex=0.4 → 0.6 rad/s
+    kp: 0.8               # [rad/s] / 정규화 오차 1.0 — ex=0.4 → 0.32 rad/s
     cmd_sign: -1.0        # REP-103 angular.z + = 왼쪽. ex>0(오른쪽) → 음수 명령
     deadband: 0.05        # |ex| < 0.05 는 정지(중심 근처 떨림 방지)
-    max_speed: 0.9        # [rad/s] 포화
+    max_speed: 0.48       # [rad/s] 포화
     tracking_hz: 20.0     # newest synchronized RGB/depth pair, 20 Hz detection
     rate_hz: 20.0         # 명령·상태 주기
     timeout: 0.5          # [s] 마지막 신선한 입력 수신 후 (과제 기본값, 30 fps에서 약 15프레임 유실)
     max_input_age: 0.5    # [s] header.stamp가 이보다 오래되면 신선하지 않음
     # 틸트(상하) — 2축 확장. false면 팬 1축(평가 필수 지표는 팬 기준)
     tilt_enabled: true
-    kp_tilt: 1.2          # [rad/s] / 정규화 오차 1.0 (세로 화각이 좁아 ey=1 ≈ 21°, 팬은 ex=1 ≈ 35°)
+    kp_tilt: 0.64         # [rad/s] / 정규화 오차 1.0 (세로 화각이 좁아 ey=1 ≈ 21°, 팬은 ex=1 ≈ 35°)
     cmd_sign_tilt: 1.0    # REP-103 angular.y + = 아래. ey>0(아래) → 양수 명령. 실제 모터로 확인
     deadband_tilt: 0.05
-    max_speed_tilt: 0.6   # [rad/s] 중력이 걸리는 축이라 팬보다 낮게
+    max_speed_tilt: 0.32  # [rad/s] 중력이 걸리는 축이라 팬보다 낮게
 
     # 검출: xmen_tracker/detector.py + detector_config(빈 값이면 xmen_tracker/config/detector.yaml).
     # HSV·크기·모양·뎁스 검증·일부만 보이는 큐브 설정은 detector.yaml에서 바꾼다(hardware_launch의 detector_config 인자로 다른 파일 지정).
