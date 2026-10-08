@@ -48,9 +48,15 @@ OpenCR은 컴퓨터에서 받은 회전 명령으로 팬·틸트 모터를 움�
 
 ![OpenCR 펌웨어 구조](results/control/opencr_lite_1_structure.png)
 
+*`opencr_lite.ino` 전체 구조 — 왼쪽 PC와 USB 시리얼(115200)로 명령(`v PAN TILT` / `p` / `x`)을 주고받고, 오른쪽 Dynamixel 버스(Serial3, 1 Mbps)로 pan ID11·tilt ID12를 움직인다. `setup()`이 축을 준비(`prepareMotor`)하고, `loop()`는 100 Hz로 시리얼 명령 처리와 주기 제어(`readPosition` → `writeSpeed`)를 돌린다. 아래 붉은 블록은 고장 처리로, 200 ms 동안 명령이 없거나 검사에 실패하면 `stopMotion()`으로 그 자리에 멈춘다*
+
 ![OpenCR 제어 루프](results/control/opencr_lite_2_loop.png)
 
+*`loop()` 한 주기의 흐름 — ① 명령이 활성인데 USB가 끊겼거나 200 ms가 지났으면 바로 `stopMotion()`(워치독), ② `readCommands()`로 들어온 줄을 처리, ③ FAULT 상태이거나 아직 10 ms가 안 됐으면 그대로 반환, ④ `readPosition()`으로 위치·토크·HW 에러·워치독을 검사하고 ⑤ `writeSpeed()`로 속도를 PROFILE + 한계 위치 GOAL로 바꿔 내보낸다. 두 검사 중 하나라도 실패하면 `latchFault()`로 고장을 걸고 정지한다*
+
 ![OpenCR 초기 설정](results/control/opencr_lite_3_setup.png)
+
+*`setup()`과 축 준비 절차 — 시리얼·Dynamixel 버스를 열고 두 축에 `prepareMotor()`를 부른다. 오른쪽 상자가 그 내용으로, ping → 모델 확인 → 토크·워치독 해제 → Homing Offset·HW 에러·속도 상한 검사 → 현재 위치가 허용 범위 안인지 확인 → 원점(origin) 계산 순서다. 모두 통과해야 토크를 켜고 워치독 200 ms를 걸며 `axis.ready = true`가 된다. 한 단계라도 실패하면 `failure(reason)`으로 이유를 남기고 `latchFault()` 상태로 `loop()`에 들어간다*
 
 ---
 
