@@ -88,6 +88,16 @@ ros2 run xmen_tracker tracker_node --ros-args -p detector_config:=/path/to/detec
 ros2 launch xmen_tracker perception.launch.py detector_config:=/path/to/detector.yaml
 ```
 
+Bag playback: recorded stamps are in the past, so with the wall clock every pair is older
+than `max_input_age` and dropped. Play the bag with `--clock` and use sim time.
+`debug_timing:=true` logs received/synced/processed/stale counts and stamp ages every 2 s;
+warnings for stale stamps or unmatched color/depth stamps are always on.
+
+```bash
+ros2 bag play <bag_dir> --clock
+ros2 launch xmen_tracker perception.launch.py use_sim_time:=true debug_timing:=true
+```
+
 Tracking (`xmen_tracker/cube_tracker.py`, `tracking:` section of the same YAML) runs
 HSV detection on every frame and keeps the same cube across frames:
 
