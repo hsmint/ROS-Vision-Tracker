@@ -58,7 +58,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Marker
       Name: Target Marker
       Enabled: true
-      Marker Topic:
+      Topic:
         Value: /target_marker
         Reliability Policy: Reliable
         Durability Policy: Volatile

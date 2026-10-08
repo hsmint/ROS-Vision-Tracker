@@ -1,7 +1,13 @@
 # xmen_tracker
 
-Tracks the blue target using synchronized RGB and aligned metric depth from
-`xmen_vision`. The worker publishes `/target` and `/tracking/bbox`; a separate
+The tracker also monitors measured `/joint_states` and logs a warning when pan
+reaches ±180° or tilt reaches ±120°, allowing 8 encoder ticks (about 0.70°)
+for settling near the boundary. Warnings include the measured angle and limit,
+repeat at most once every 5 seconds, and do not change motion commands. The
+tracker and controller must share the same ROS domain to receive joint feedback.
+
+Captures RealSense color and aligned depth (`realsense_node`) and tracks the blue
+target from them. The worker publishes `/target` and `/tracking/bbox`; a separate
 remote RViz node draws overlays and RViz markers. This package performs
 visual tracking and publishes pan/tilt angular velocities on `/cmd_vel`. A
 separate motor driver handles serial communication and hardware limits.
@@ -9,15 +15,28 @@ separate motor driver handles serial communication and hardware limits.
 From the ROS workspace:
 
 ```bash
-colcon build --packages-select xmen_vision xmen_tracker
+colcon build --packages-select xmen_tracker
 source install/setup.bash
-ros2 run xmen_vision realsense_node
+ros2 run xmen_tracker realsense_node
 ```
+
+`realsense_node` publishes `/camera/color/image_raw` (`bgr8`),
+`/camera/aligned_depth_to_color/image_raw` (`32FC1`, meters; invalid = NaN) and
+`/camera/color/camera_info` (once at startup, transient local). White balance is fixed
+at 4600 K and exposure is automatic to match the detector HSV. See
+[REALSENSE.md](REALSENSE.md) for parameters and camera notes.
 
 In another sourced terminal on the camera PC:
 
 ```bash
 ros2 run xmen_tracker tracker_node
+```
+
+In a third Pi terminal, start the independent preview encoder (the hardware
+bringup launch starts it automatically):
+
+```bash
+ros2 run xmen_tracker preview_node --ros-args -p preview_hz:=5.0 -p jpeg_quality:=70
 ```
 
 Run only one detector publishing `/target` at a time.
@@ -33,33 +52,61 @@ ros2 run xmen_tracker rviz_node
 
 Run RViz2 on the remote PC. Both computers must use the same `ROS_DOMAIN_ID`
 and have ROS discovery/network communication enabled between them. The RViz
-node receives the color image and detection results; depth stays on the tracker
-computer. Raw RGB streaming uses network bandwidth. Tracking keeps running if
+node receives an annotated JPEG preview from `preview_node` on the Pi; raw color
+and depth stay on the tracker computer by default. Tracking keeps running if
 the remote RViz node disconnects. Start the camera and worker separately;
 neither requires the RViz node to be running.
 
-Settings live in node parameter defaults, with no YAML configuration file.
-Tracker parameters are startup-only: `hsv_lower`, `hsv_upper`, `min_area`,
-`max_area_ratio`, `min_depth_m`, `max_depth_m`, `min_valid_depth_ratio`, and
-`stall_timeout`. Override them when running the tracker directly, for example:
+Detection uses `xmen_tracker/detector.py` with `config/detector.yaml`
+(parameter `detector_config`; empty = the installed `xmen_tracker/config/detector.yaml`).
+The same file is used by the `tuning` and `evaluate` tools. Tune detection in that YAML,
+not in node parameters:
+
+- **HSV from measured lighting**: dark/normal/bright × 0.15–1.0 m, 1,400 frames
+  (cube H 110–113, S 248–255; background blue S ≤ 163 → S ≥ 200, H 104–120).
+- **Real-size check** from aligned depth and the color focal length
+  (`camera/color/camera_info` from `realsense_node`; config value 460 px until it arrives):
+  distance 0.1–1.1 m, short side ≤ 6 cm, long side ≤ 8 cm, 3–30 cm².
+  Closer than the D435 minimum range, depth is missing: a candidate is then accepted
+  from color and shape only when it is at least `depth.no_depth_min_area` (800 px).
+- **Shape checks**: aspect ≤ 3, extent ≥ 0.60, solidity ≥ 0.75 (rejects a blue 3D-printed
+  bracket of cube size), and `box_fit` (outline must fit a ≤6-vertex polygon; rejects
+  circles, ellipses, rings).
+- **Partially visible cube**: shape and minimum-area limits are relaxed only when the
+  blob is cut by the image border along that border, or a non-blue object in front
+  (closer in depth) explains the missing part.
+
+Other startup-only parameters: `stall_timeout`, and `legacy_rgb_bag` (true for bags
+recorded before `realsense_node` published real BGR data).
 
 ```bash
-ros2 run xmen_tracker tracker_node --ros-args -p max_depth_m:=2.0
+ros2 run xmen_tracker tracker_node --ros-args -p detector_config:=/path/to/detector.yaml
+# Tracker-only launch (start realsense_node separately):
+ros2 launch xmen_tracker perception.launch.py detector_config:=/path/to/detector.yaml
 ```
 
-HSV defaults come from `xmen_vision2/config/detector.yaml`. Area is measured at
-the input resolution. Candidates need valid depth; absent, invalid, or
-out-of-range depth rejects the candidate. There is no color-only fallback.
-Physical-size filtering requires camera intrinsics, which `xmen_vision` does
-not currently publish, so physical-size parameters are omitted.
+The largest valid candidate is selected each frame, with image-center proximity
+breaking near-equal-area ties. This does not maintain object identity between
+multiple blue objects.
 
-The largest valid color contour is selected each frame, with image-center
-proximity breaking equal-area ties. This does not maintain object identity
-between multiple blue objects. Tune HSV and depth bounds for your target.
+Tuning and evaluation are available in this package:
 
-Input subscriptions use reliable, volatile, keep-last QoS with depth 5:
+```bash
+ros2 run xmen_tracker tuning tune --camera
+ros2 run xmen_tracker evaluate --sim --out /tmp/xmen-evaluation
+```
 
-- `camera/color/image_raw`: RGB color (`rgb8`).
+Stop `realsense_node` before tools using `--camera`, which open the device
+directly. Camera exposure settings in detector YAML apply to these direct-camera
+tools; `realsense_node` applies the same white balance through its own parameters.
+Offline scores are not an end-to-end tracker benchmark.
+See [PERCEPTION.md](PERCEPTION.md) for data collection and filter tuning.
+
+Local tracking input subscriptions use reliable, volatile, keep-last QoS with depth 5
+and an exact-time synchronization queue of 5 pairs:
+
+- `camera/color/image_raw`: BGR color (`bgr8`).
+- `camera/color/camera_info`: color intrinsics (transient local; optional).
 - `camera/aligned_depth_to_color/image_raw`: depth (`32FC1`, meters; missing
   depth is `NaN`).
 
@@ -78,10 +125,10 @@ using reliable, volatile, keep-last depth 1 QoS, matching `motor_driver_node`:
 - All other components stay zero. These are velocities, not absolute joint angles.
 
 The calculation is `clamp(sign * gain * normalized_error, -limit, limit)`,
-with zero output inside the deadband. Startup parameters match the previous
-controller: `kp=1.0`, `cmd_sign=-1.0`, `deadband=0.05`, `max_speed=0.6`,
-`kp_tilt=0.8`, `cmd_sign_tilt=1.0`, `deadband_tilt=0.05`,
-`max_speed_tilt=0.4`, `tilt_enabled=true`, `rate_hz=20.0`, `timeout=0.5`,
+with zero output inside the deadband. Startup parameters are
+`kp=1.5`, `cmd_sign=-1.0`, `deadband=0.05`, `max_speed=0.9`,
+`kp_tilt=1.2`, `cmd_sign_tilt=1.0`, `deadband_tilt=0.05`,
+`max_speed_tilt=0.6`, `tilt_enabled=true`, `rate_hz=20.0`, `tracking_hz=20.0`, `timeout=0.5`,
 and `max_input_age=0.5`. Gains convert normalized error to rad/s.
 
 No target, invalid results, stale images, or missing input produce zero commands.
@@ -100,9 +147,13 @@ at 1 Hz.
 The worker publishes `/tracking/bbox` as `geometry_msgs/PolygonStamped` with
 reliable, volatile, keep-last depth 10 QoS. Its original image header identifies
 the detection frame. Two pixel-coordinate points encode inclusive top-left and
-bottom-right corners (z=0); an empty polygon means no target. The RViz node
+bottom-right corners (z=0); an empty polygon means no target. The Pi preview node
 pairs these boxes with color images by exact timestamp using a bounded queue
-of 30. It never reruns detection or draws old boxes over newer images. Debug
+of 10. A separate 5 Hz timer encodes only the latest pair as JPEG (quality 70),
+with the box already drawn, on `/tracking/preview/compressed`. It never reruns
+detection or draws old boxes over newer images. The PC RViz node defaults to
+this compressed transport; `preview_transport:=raw` restores direct RGB/box
+synchronization for legacy setups. Debug
 markers subscribe to `/target` with best-effort QoS independently of images.
 
 With `rviz_node` running, to see a bounding box on the actual camera image in RViz2, add an **Image**
@@ -110,7 +161,7 @@ display, select `/tracking/image`, and use **Reliable** reliability. No TF or
 Fixed Frame setting is needed for this Image display. The green rectangle
 encloses the selected blue target that passes the depth checks. Frames without
 a valid target are shown without a rectangle. The image retains the original
-camera header and RGB encoding, and is published when a subscriber is connected.
+camera header and decoded RGB encoding, and is published when a subscriber is connected.
 If the camera stops, no new image arrives and RViz may retain the last image.
 
 To show the annotated camera image inside RViz's grid/3D view:
@@ -137,3 +188,8 @@ on target loss and expires after `marker_lifetime` seconds (default 0.5).
 The RViz node publishes a static `tracking_view` → `tracking_image` transform
 so the frame appears in the dropdown. This is a visualization-only frame tree;
 its coordinates are not measured positions in the robot's physical workspace.
+
+Detection runs on a separate `tracking_hz` timer (20 Hz by default). Incoming
+synchronized pairs replace a single pending pair; superseded pairs are dropped
+before conversion and detection. Each pair is processed at most once. Camera
+publication remains 30 Hz and the independent command timer remains 20 Hz.

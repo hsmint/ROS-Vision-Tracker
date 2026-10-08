@@ -8,3 +8,9 @@
   durability: volatile
   history: keep_last
   depth: 5
+# realsense_node가 시작할 때 한 번 발행(transient local). 재생 중 늦게 붙는 tracker도 받도록 같은 QoS로 낸다.
+/camera/color/camera_info:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 1
