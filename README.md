@@ -280,7 +280,7 @@ detection, see [xmen_tracker](xmen_tracker/) and
 
 <div align="center">
 
-### Team xmen
+### Team Xmen
 
 ROS-Vision-Tracker was developed as **Project 1 for KANT PA 1기**.
 
