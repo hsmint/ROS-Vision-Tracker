@@ -156,6 +156,4 @@ command = clamp(direction × Kp × e, -speed_limit, +speed_limit)   (그 외)
 
 ## 7. 남은 일
 
-- 발제 조건(Kp 2종 × 같은 조건 3회) 충족: 비교할 Kp 2종(예: 1.5, 2.5)을 골라 run2·3과 같은 조건으로 1회씩 추가
-- Kp 차이를 보기 위한 추가 시험: 포화가 적은 Kp 0.5·1.0 각 3회, 또는 speed_limit 상향 후 재시험
 - 그래프 PNG 생성(`python3-matplotlib` 설치 후 `track_plot`)과 첨부
