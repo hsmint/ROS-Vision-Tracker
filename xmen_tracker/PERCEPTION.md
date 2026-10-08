@@ -5,7 +5,9 @@
 | 파일 | 내용 |
 |---|---|
 | `xmen_tracker/detector.py` | 검출: HSV(엄격 범위) → 컨투어 → 면적·모양 → 뎁스 거리·실제 크기 → 선택 → 볼록껍질 중심 |
-| `xmen_tracker/tracker_node.py` | 동기화 영상 검출 및 팬/틸트 제어 |
+| `xmen_tracker/cube_tracker.py` | 같은 큐브 유지 + 검출이 놓친 프레임만 CSRT로 이어 현재 프레임에서 확인, 균일성 검사(청바지 차단) |
+| `xmen_tracker/tracker_node.py` | 동기화 영상 검출·추적 및 팬/틸트 제어 |
+| `tools/csrt_track.py` | 추적 시험: 모의 가림·방해물 비교, `--camera --record`(n 키 = 큐브 없음 표시), `--replay` |
 | `xmen_tracker/tuning.py` | `tuning` — HSV 튜닝, 장면 기록, 조건별 검출률 측정, 평가 데이터 수집 |
 | `xmen_tracker/evaluate.py` | `evaluate` — 조명×거리 인식률 평가, 설정 비교 |
 | `config/detector.yaml` | 검출 설정(노드·도구 공용) |
@@ -48,7 +50,10 @@ ros2 run xmen_tracker evaluate --sim --ablation  # 실제 영상 1장 변형(모
 | 밝을 때 큐브가 조각남 | 하이라이트가 mask에서 빠짐 | `hsv_ranges` S 하한, `relaxed_ranges` S 하한 |
 | 1 m에서 놓침 | 탈락 `too_small` | `depth.min_area_px`, `selection.min_area_factor` |
 | 0.1~0.2 m에서 놓침 | 탈락 `no_depth`·`size_mismatch` | `depth.no_depth_min_area`, `depth.max_short_m`·`max_long_m` |
-| 다른 파란 물체 오검출 | 목표 없는 장면의 검출 | `hsv_ranges` S 하한↑, `min_extent`·`min_solidity` 엄격히 |
+| 다른 파란 물체 오검출 | 목표 없는 장면의 검출 | `hsv_ranges` S 하한↑, `min_extent`·`min_solidity` 엄격히, 무늬 있는 천(청바지)은 `tracking.min_fill`·`min_v` |
+| 가려질 때 놓침 | `csrt_track.py --replay`에서 미검출 구간 | `tracking.verify_area`↓, `hold_frames`↑ |
+| 청바지 등 파란 천 앞에 든 큐브를 놓침 | 탈락 `size_mismatch`·`low_extent`(큐브+천이 한 덩어리) | `selection.color_split`(`lower` S·V 하한) |
+| 추적 중 다른 물체로 옮겨 감 | 기록 영상에서 상자가 다른 물체로 이동 | `tracking.z_gate`↓, `assoc_dist`↓ |
 | 사각 면이 아닌 파란 물체(원·타원·고리) 오검출 | 탈락 사유에 `not_box`가 없음 | `selection.box_fit` (`base`, `pixel` 낮추면 엄격, `min_px` 낮추면 먼 거리까지 검사) |
 | 비스듬한·모서리 방향 큐브를 놓침 | 탈락 `not_box`·`size_mismatch` | `box_fit.base`·`pixel`↑, `depth.max_short_m`(이론 최대 5.4 cm) |
 | 화면 가장자리·손에 가려 일부만 보일 때 놓침 | 탈락 `bad_aspect`·`low_extent`·`size_mismatch` | `selection.partial` (`max_aspect`, `front_margin_*`, `front_ratio`, `ring_front_ratio`, `min_area_m2`) |
