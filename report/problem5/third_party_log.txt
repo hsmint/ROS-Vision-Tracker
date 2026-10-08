@@ -1,0 +1,33 @@
+pa8@pa8-Legion-Pro-5-16IAX10:~/Documents/temp/ROS-Vision-Tracker$ ros2 bag play ~/bags/p5/p5_success --clock
+[INFO] [1791438830.148569369] [rosbag2_player]: Set rate to 1
+[INFO] [1791438830.154054888] [rosbag2_player]: Adding keyboard callbacks.
+[INFO] [1791438830.154068707] [rosbag2_player]: Press SPACE for Pause/Resume
+[INFO] [1791438830.154072200] [rosbag2_player]: Press CURSOR_RIGHT for Play Next Message
+[INFO] [1791438830.154075549] [rosbag2_player]: Press CURSOR_UP for Increase Rate 10%
+[INFO] [1791438830.154079715] [rosbag2_player]: Press CURSOR_DOWN for Decrease Rate 10%
+Progress bar enabled at 3 Hz.
+Progress bar [?]: [R]unning, [P]aused, [B]urst, [D]elayed, [S]topped
+[INFO] [1791438830.155228728] [rosbag2_player]: Playback until timestamp: -1
+[WARN] [1791438831.227183934] [rosbag2_player]: New subscription discovered on topic '/camera/color/camera_info', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: DURABILITY_QOS_POLICY
+[INFO] [1791438847.077161228] [rosbag2_player]: Stopping playback.
+
+
+====== Playback Progress ======
+[1791422049.535494089] Duration 16.65/47.81 [R]
+
+
+
+
+
+pa8@pa8-Legion-Pro-5-16IAX10:~/Documents/temp/ROS-Vision-Tracker$ ros2 run xmen_tracker tracker_node --ros-args   --params-file $HOME/bags/p5/p5_success/tracker.yaml   -p detector_config:=$HOME/bags/p5/p5_success/detector.yaml   -p use_sim_time:=true -p debug_timing:=true   -r /target:=/target_replay -r /cmd_vel:=/cmd_vel_replay   -r /perception_status:=/perception_status_replay
+[INFO] [1791438827.646196790] [tracker_node]: Detector config /home/pa8/bags/p5/p5_success/detector.yaml: HSV [{'lower': [104, 200, 8], 'upper': [120, 255, 255]}], min_area 57 px, depth 0.1-1.1 m, CSRT on
+[INFO] [1791438827.646961994] [tracker_node]: Waiting for synchronized RGB and aligned depth images.
+[INFO] [1791438829.647737568] [tracker_node]: timing 2 s: color 0, depth 0, synced 0, processed 0, stale 0; no images; use_sim_time=True, now=0.000 s
+[WARN] [1791438831.228846627] [tracker_node]: New publisher discovered on topic 'camera/color/camera_info', offering incompatible QoS. No messages will be received from it. Last incompatible policy: DURABILITY
+[INFO] [1791438831.647160324] [tracker_node]: timing 2 s: color 8, depth 8, synced 8, processed 5, stale 0; color age +0.059 s, depth age +0.059 s; use_sim_time=True, now=1791422034.265 s
+[INFO] [1791438833.647167838] [tracker_node]: timing 2 s: color 43, depth 42, synced 42, processed 29, stale 0; color age +0.020 s, depth age +0.061 s; use_sim_time=True, now=1791422036.265 s
+[INFO] [1791438835.647226626] [tracker_node]: timing 2 s: color 42, depth 43, synced 43, processed 27, stale 0; color age +0.066 s, depth age +0.066 s; use_sim_time=True, now=1791422038.265 s
+[INFO] [1791438837.647345642] [tracker_node]: timing 2 s: color 41, depth 41, synced 40, processed 24, stale 0; color age +0.036 s, depth age +0.081 s; use_sim_time=True, now=1791422040.265 s
+[INFO] [1791438839.647161889] [tracker_node]: timing 2 s: color 44, depth 45, synced 45, processed 30, stale 0; color age +0.030 s, depth age +0.030 s; use_sim_time=True, now=1791422042.265 s
+[INFO] [1791438841.647174898] [tracker_node]: timing 2 s: color 44, depth 44, synced 44, processed 29, stale 0; color age +0.018 s, depth age +0.018 s; use_sim_time=True, now=1791422044.265 s
+[INFO] [1791438843.647233802] [tracker_node]: timing 2 s: color 46, depth 45, synced 45, processed 29, stale 0; color age +0.028 s, depth age +0.069 s; use_sim_time=True, now=1791422046.265 s
