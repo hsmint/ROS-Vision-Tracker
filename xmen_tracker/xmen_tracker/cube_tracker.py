@@ -126,6 +126,7 @@ class CubeTracker:
         self.frame_size = (raw_bgr.shape[1], raw_bgr.shape[0])
         dproc = detector.preprocess_depth(depth, g)
         det, mask = detector.detect(frame, self.cfg, g, dproc)
+        self.last_mask = mask                 # 디버그 발행용: HSV inRange + 모폴로지 결과(후보 필터 전)
         self.hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         accepted = [c for c in det.candidates if c.accepted]
         if accepted and (self.p['min_fill'] or self.p['min_v'] or self.p['min_s']):

@@ -120,6 +120,10 @@ class TrackerNode(Node):
         self.status_publisher = self.create_publisher(
             String, '/perception_status', status_qos
         )
+        # 디버그: 검출기가 만든 색 Mask(mono8, 255 = 목표색 전경). 구독자가 있을 때만 발행한다
+        self.mask_publisher = self.create_publisher(
+            Image, '/tracking/mask', QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
+        )
         
         self.status_timer = self.create_timer(0.1, self.check_stall)
         self.heartbeat_timer = self.create_timer(1.0, self.publish_status)
@@ -320,6 +324,10 @@ class TrackerNode(Node):
         depth_frame = (detector.depth_from_meters(depth, self.fx, self.fy)
                        if detector.depth_cfg(self.detector_cfg) is not None else None)
         result = self.cube_tracker.step(bgr, depth_frame)
+        if self.mask_publisher.get_subscription_count() > 0:
+            mask_msg = self.bridge.cv2_to_imgmsg(self.cube_tracker.last_mask, encoding='mono8')
+            mask_msg.header = color_msg.header
+            self.mask_publisher.publish(mask_msg)
         coordinates = result.target or (0.0, 0.0, 0.0)
         bbox = result.bbox_original if result.target else None
         if result.source == 'csrt' or result.partial:
